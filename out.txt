@@ -1,0 +1,31 @@
+{
+  "sheetName": "Default",
+  "headers": [
+    "Key",
+    "English",
+    "French",
+    "Russian",
+    "German",
+    "Italian",
+    "Spanish (Spain)",
+    "Spanish (Mexico)",
+    "Portuguese (Brazil)",
+    "Portuguese (Portugal)"
+  ],
+  "row1": [
+    "Slipstream",
+    "Slipstream"
+  ],
+  "row2": [
+    "Deep Sea",
+    "Deep Sea",
+    null,
+    null,
+    null,
+    null,
+    "Eco del Abismo",
+    "Eco del Abismo",
+    "Eco do Abismo",
+    "Eco do Abismo"
+  ]
+}

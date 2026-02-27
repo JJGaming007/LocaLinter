@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LocaLinter</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="assets/xlsx.min.js"></script>
+  <script type="module" src="main.js" defer></script>
+</head>
+
+<body>
+  <div class="container">
+    <header>
+      <h1>LocaLinter</h1>
+      <p>Drop your .xlsx or .csv sheet to validate formatting, brackets, and variables.</p>
+    </header>
+
+    <div id="dropzone" class="dropzone">
+      <div class="drop-content">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+          class="feather feather-upload-cloud">
+          <polyline points="16 16 12 12 8 16"></polyline>
+          <line x1="12" y1="12" x2="12" y2="21"></line>
+          <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path>
+          <polyline points="16 16 12 12 8 16"></polyline>
+        </svg>
+        <p>Drag & Drop your Localization Sheet here</p>
+        <span class="or">OR</span>
+        <button id="browse-btn" class="btn">Browse Files</button>
+        <input type="file" id="file-input"
+          accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+          style="display: none;" />
+      </div>
+    </div>
+
+    <div id="results-container" class="hidden">
+      <div class="results-header">
+        <h2>Validation Report</h2>
+        <div class="stats">
+          <span id="stat-scanned" class="stat-pill neutral">Rows Scanned: 0</span>
+          <span id="stat-issues" class="stat-pill danger">Issues Found: 0</span>
+        </div>
+      </div>
+
+      <div class="table-wrapper">
+        <table id="results-table">
+          <thead>
+            <tr>
+              <th>Key (Row)</th>
+              <th>Language (Col)</th>
+              <th>Issue Details</th>
+              <th>Text Snippet</th>
+            </tr>
+          </thead>
+          <tbody id="results-body">
+            <!-- Results go here -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>
