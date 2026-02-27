@@ -16,9 +16,8 @@
       <h1>LocaLinter</h1>
       <p>Drop your .xlsx or .csv sheet to validate formatting, brackets, and variables.</p>
     </header>
-
     <div id="dropzone" class="dropzone">
-      <div class="drop-content">
+      <div id="drop-content-idle" class="drop-content">
         <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none"
           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
           class="feather feather-upload-cloud">
@@ -34,6 +33,27 @@
           accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
           style="display: none;" />
       </div>
+
+      <div id="loaded-content" class="drop-content hidden">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none"
+          class="feather feather-file" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round">
+          <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+          <polyline points="13 2 13 9 20 9"></polyline>
+        </svg>
+        <p id="loaded-file-name" style="margin: 1rem 0; color: var(--accent); font-weight: bold;"></p>
+        <button id="remove-file-btn" class="btn sm-btn"
+          style="background-color: var(--danger); border-color: var(--danger-hover);">Remove File</button>
+      </div>
+    </div>
+
+    <div class="settings-panel">
+      <label for="ignore-list">Ignored Terms (comma-separated):</label>
+      <p class="settings-desc">These exact English strings will not be flagged as Missing Localizations.</p>
+      <div class="settings-inputs">
+        <textarea id="ignore-list" placeholder="e.g. Zero, Enigma, Void" rows="2"></textarea>
+        <button id="save-ignore-btn" class="btn sm-btn">Save</button>
+      </div>
     </div>
 
     <div id="results-container" class="hidden">
@@ -45,20 +65,47 @@
         </div>
       </div>
 
-      <div class="table-wrapper">
-        <table id="results-table">
-          <thead>
-            <tr>
-              <th>Key (Row)</th>
-              <th>Language (Col)</th>
-              <th>Issue Details</th>
-              <th>Text Snippet</th>
-            </tr>
-          </thead>
-          <tbody id="results-body">
-            <!-- Results go here -->
-          </tbody>
-        </table>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="format-issues">Format Issues <span id="badge-format"
+            class="badge">0</span></button>
+        <button class="tab-btn" data-tab="missing-locales">Missing Localizations <span id="badge-missing"
+            class="badge">0</span></button>
+      </div>
+
+      <div id="tab-format-issues" class="tab-content active">
+        <div class="table-wrapper">
+          <table id="results-table">
+            <thead>
+              <tr>
+                <th>Key (Row)</th>
+                <th>Language (Col)</th>
+                <th>Issue Details</th>
+                <th>Text Snippet</th>
+              </tr>
+            </thead>
+            <tbody id="results-body">
+              <!-- Results go here -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="tab-missing-locales" class="tab-content">
+        <div class="table-wrapper">
+          <table id="missing-table">
+            <thead>
+              <tr>
+                <th>Key (Row)</th>
+                <th>Language (Col)</th>
+                <th>Missing English Text</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="missing-body">
+              <!-- Results go here -->
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
