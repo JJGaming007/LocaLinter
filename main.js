@@ -255,10 +255,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
       for (let col = 1; col < headers.length; col++) {
         if (col === englishColIndex) continue;
-        const targetText = row[col] ? String(row[col]) : "";
 
-        if (!targetText) {
-          if (englishText) {
+        let targetText = row[col];
+        // Strictly evaluate if the cell is completely empty or just whitespace
+        if (targetText === undefined || targetText === null || String(targetText).trim() === "") {
+          if (englishText && String(englishText).trim() !== "") {
             missingIssues.push({
               key: keyInfo,
               lang: headers[col] || `Col ${col}`,
@@ -267,6 +268,9 @@ window.addEventListener('DOMContentLoaded', () => {
           }
           continue;
         }
+
+        // It has text, ensure we operate on a string
+        targetText = String(targetText);
 
         // 1. Check Brackets
         let bracketErr = checkBrackets(targetText);
