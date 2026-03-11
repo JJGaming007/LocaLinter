@@ -188,8 +188,17 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   function extractVars(text) {
-    const varRegex = /{[0-9]+}/g;
+    const varRegex = /{[a-zA-Z0-9_.]+}/g;
     return text.match(varRegex) || [];
+  }
+
+  function extractTags(text) {
+    const tagRegex = /<[^>]+>/g;
+    return text.match(tagRegex) || [];
+  }
+
+  function countLineBreaks(text) {
+    return (text.match(/\n/g) || []).length;
   }
 
   function validateData(rows) {
@@ -281,35 +290,56 @@ window.addEventListener('DOMContentLoaded', () => {
         // It has text, ensure we operate on a string
         targetText = String(targetText);
 
-        // 1. Check Brackets
+        // 1. Check Brackets (General nesting/mismatch)
         let bracketErr = checkBrackets(targetText);
-        if (bracketErr) {
-          formatIssues.push({
-            key: keyInfo,
-            lang: headers[col] || `Col ${col}`,
-            err: bracketErr,
-            snippet: targetText
-          });
-        }
+        let formatErrs = [];
+        if (bracketErr) formatErrs.push(bracketErr);
 
         // 2. Check Variables match
         if (englishText) {
+          const englishVars = extractVars(englishText);
           const targetVars = extractVars(targetText);
-          const missing = englishVars.filter(v => !targetVars.includes(v));
-          const extra = targetVars.filter(v => !englishVars.includes(v));
+          const missingVars = englishVars.filter(v => !targetVars.includes(v));
+          const extraVars = targetVars.filter(v => !englishVars.includes(v));
 
-          if (missing.length > 0 || extra.length > 0) {
-            let varErrs = [];
-            if (missing.length > 0) varErrs.push(`Missing vars: ${missing.join(', ')}`);
-            if (extra.length > 0) varErrs.push(`Extra vars: ${extra.join(', ')}`);
+          if (missingVars.length > 0) formatErrs.push(`Missing vars: ${missingVars.join(', ')}`);
+          if (extraVars.length > 0) formatErrs.push(`Extra vars: ${extraVars.join(', ')}`);
 
-            formatIssues.push({
-              key: keyInfo,
-              lang: headers[col] || `Col ${col}`,
-              err: varErrs.join('; '),
-              snippet: targetText
-            });
+          // 3. Check Tags match (e.g. <color=red>)
+          const englishTags = extractTags(englishText);
+          const targetTags = extractTags(targetText);
+          const missingTags = englishTags.filter(t => !targetTags.includes(t));
+          const extraTags = targetTags.filter(t => !englishTags.includes(t));
+
+          if (missingTags.length > 0) formatErrs.push(`Missing tags: ${missingTags.join(' ')}`);
+          if (extraTags.length > 0) formatErrs.push(`Extra tags: ${extraTags.join(' ')}`);
+
+          // 4. Check Newlines (\n)
+          const englishNL = countLineBreaks(englishText);
+          const targetNL = countLineBreaks(targetText);
+          if (englishNL !== targetNL) {
+            formatErrs.push(`Newline mismatch: expected ${englishNL}, found ${targetNL}`);
           }
+
+          // 5. Check Leading/Trailing Whitespace
+          if (englishText.startsWith(' ') && !targetText.startsWith(' ')) formatErrs.push('Missing leading space');
+          if (!englishText.startsWith(' ') && targetText.startsWith(' ')) formatErrs.push('Extra leading space');
+          if (englishText.endsWith(' ') && !targetText.endsWith(' ')) formatErrs.push('Missing trailing space');
+          if (!englishText.endsWith(' ') && targetText.endsWith(' ')) formatErrs.push('Extra trailing space');
+        }
+
+        // 6. Check for Double Spaces (Internal consistency)
+        if (targetText.includes('  ')) {
+          formatErrs.push('Contains double spaces');
+        }
+
+        if (formatErrs.length > 0) {
+          formatIssues.push({
+            key: keyInfo,
+            lang: headers[col] || `Col ${col}`,
+            err: formatErrs.join('; '),
+            snippet: targetText
+          });
         }
       }
     }
