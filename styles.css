@@ -326,6 +326,13 @@ tbody tr:last-child td {
   color: #ff7b72;
 }
 
+.row-num {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  margin-left: 0.5rem;
+  font-weight: normal;
+}
+
 .success-state {
   text-align: center;
   padding: 4rem 2rem;

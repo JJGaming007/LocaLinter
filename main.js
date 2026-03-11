@@ -249,7 +249,7 @@ window.addEventListener('DOMContentLoaded', () => {
       if (englishText) {
         let baseBracketErr = checkBrackets(englishText);
         if (baseBracketErr) {
-          formatIssues.push({ key: keyInfo, lang: headers[englishColIndex] || "English", err: `Base text err: ${baseBracketErr}`, snippet: englishText });
+          formatIssues.push({ key: keyInfo, rowNum: rowIndex + 1, lang: headers[englishColIndex] || "English", err: `Base text err: ${baseBracketErr}`, snippet: englishText });
         }
       }
 
@@ -280,6 +280,7 @@ window.addEventListener('DOMContentLoaded', () => {
           if (englishText && String(englishText).trim() !== "") {
             missingIssues.push({
               key: keyInfo,
+              rowNum: rowIndex + 1,
               lang: headers[col] || `Col ${col}`,
               englishText: englishText
             });
@@ -336,6 +337,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (formatErrs.length > 0) {
           formatIssues.push({
             key: keyInfo,
+            rowNum: rowIndex + 1,
             lang: headers[col] || `Col ${col}`,
             err: formatErrs.join('; '),
             snippet: targetText
@@ -418,8 +420,9 @@ window.addEventListener('DOMContentLoaded', () => {
     } else {
       formatIssues.forEach(issue => {
         const tr = document.createElement('tr');
+        const rowSpan = issue.rowNum ? ` <span class="row-num" title="Excel Row Number">(Row ${issue.rowNum})</span>` : '';
         tr.innerHTML = `
-          <td><strong>${escapeHtml(issue.key)}</strong></td>
+          <td><strong>${escapeHtml(issue.key)}</strong>${rowSpan}</td>
           <td>${escapeHtml(issue.lang)}</td>
           <td class="issue-cell">${escapeHtml(issue.err)}</td>
           <td><span class="text-snippet">${escapeHtml(issue.snippet)}</span></td>
@@ -435,8 +438,9 @@ window.addEventListener('DOMContentLoaded', () => {
       missingIssues.forEach(issue => {
         const tr = document.createElement('tr');
         const translateUrl = getGoogleTranslateUrl(issue.lang, issue.englishText);
+        const rowSpan = issue.rowNum ? ` <span class="row-num" title="Excel Row Number">(Row ${issue.rowNum})</span>` : '';
         tr.innerHTML = `
-          <td><strong>${escapeHtml(issue.key)}</strong></td>
+          <td><strong>${escapeHtml(issue.key)}</strong>${rowSpan}</td>
           <td>${escapeHtml(issue.lang)}</td>
           <td><span class="text-snippet">${escapeHtml(issue.englishText)}</span></td>
           <td>
