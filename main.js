@@ -18,6 +18,15 @@ window.addEventListener('DOMContentLoaded', () => {
   const removeFileBtn = document.getElementById('remove-file-btn');
   const ignoreListInput = document.getElementById('ignore-list');
   const saveIgnoreBtn = document.getElementById('save-ignore-btn');
+  const langFilter = document.getElementById('lang-filter');
+
+  let allFormatIssues = [];
+  let allMissingIssues = [];
+  let currentScannedCount = 0;
+
+  langFilter.addEventListener('change', () => {
+    filterResults();
+  });
 
   let currentRows = null;
   let currentFileName = "";
@@ -305,14 +314,56 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     }
 
+    allFormatIssues = formatIssues;
+    allMissingIssues = missingIssues;
+    currentScannedCount = rowsScanned;
+
+    populateFilter(formatIssues, missingIssues);
     renderResults(rowsScanned, formatIssues, missingIssues);
   }
 
-  function renderResults(scannedCount, formatIssues, missingIssues) {
+  function populateFilter(formatIssues, missingIssues) {
+    const allIssues = [...formatIssues, ...missingIssues];
+    const languages = [...new Set(allIssues.map(i => i.lang))].sort();
+    const currentValue = langFilter.value;
+
+    // Clear except "All"
+    langFilter.innerHTML = '<option value="all">All Languages</option>';
+
+    languages.forEach(lang => {
+      const option = document.createElement('option');
+      option.value = lang;
+      option.textContent = lang;
+      langFilter.appendChild(option);
+    });
+
+    // Restore value if it still exists
+    if ([...langFilter.options].some(o => o.value === currentValue)) {
+      langFilter.value = currentValue;
+    }
+  }
+
+  function filterResults() {
+    const selectedLang = langFilter.value;
+    const filteredFormat = selectedLang === 'all'
+      ? allFormatIssues
+      : allFormatIssues.filter(i => i.lang === selectedLang);
+
+    const filteredMissing = selectedLang === 'all'
+      ? allMissingIssues
+      : allMissingIssues.filter(i => i.lang === selectedLang);
+
+    renderResults(currentScannedCount, filteredFormat, filteredMissing, true);
+  }
+
+  function renderResults(scannedCount, formatIssues, missingIssues, isFiltered = false) {
     resultsContainer.classList.remove('hidden');
     statScanned.textContent = `Rows Scanned: ${scannedCount}`;
 
-    const totalIssues = formatIssues.length + missingIssues.length;
+    const totalFormat = allFormatIssues.length;
+    const totalMissing = allMissingIssues.length;
+    const totalIssues = totalFormat + totalMissing;
+
     badgeFormat.textContent = formatIssues.length;
     badgeMissing.textContent = missingIssues.length;
 
@@ -324,12 +375,16 @@ window.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    statIssues.className = totalIssues > 0 ? 'stat-pill danger' : 'stat-pill success';
-    statIssues.textContent = `Issues Found: ${totalIssues} (${formatIssues.length} Format, ${missingIssues.length} Missing)`;
+    statIssues.className = 'stat-pill danger';
+    let issuesText = `Issues Found: ${totalIssues} (${totalFormat} Format, ${totalMissing} Missing)`;
+    if (isFiltered) {
+      issuesText += ` — Showing ${formatIssues.length + missingIssues.length} for ${langFilter.value}`;
+    }
+    statIssues.textContent = issuesText;
 
     resultsBody.innerHTML = '';
     if (formatIssues.length === 0) {
-      resultsBody.innerHTML = `<tr><td colspan="4" class="success-state"><h3>No formatting issues!</h3></td></tr>`;
+      resultsBody.innerHTML = `<tr><td colspan="4" class="success-state"><h3>No formatting issues!</h3>${isFiltered ? `<p>For selected language: ${langFilter.value}</p>` : ''}</td></tr>`;
     } else {
       formatIssues.forEach(issue => {
         const tr = document.createElement('tr');
@@ -345,7 +400,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     missingBody.innerHTML = '';
     if (missingIssues.length === 0) {
-      missingBody.innerHTML = `<tr><td colspan="4" class="success-state"><h3>All localizations present!</h3></td></tr>`;
+      missingBody.innerHTML = `<tr><td colspan="4" class="success-state"><h3>All localizations present!</h3>${isFiltered ? `<p>For selected language: ${langFilter.value}</p>` : ''}</td></tr>`;
     } else {
       missingIssues.forEach(issue => {
         const tr = document.createElement('tr');

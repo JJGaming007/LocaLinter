@@ -58,7 +58,15 @@
 
     <div id="results-container" class="hidden">
       <div class="results-header">
-        <h2>Validation Report</h2>
+        <div class="results-header-left">
+          <h2>Validation Report</h2>
+          <div class="filter-group">
+            <label for="lang-filter">Filter Language:</label>
+            <select id="lang-filter">
+              <option value="all">All Languages</option>
+            </select>
+          </div>
+        </div>
         <div class="stats">
           <span id="stat-scanned" class="stat-pill neutral">Rows Scanned: 0</span>
           <span id="stat-issues" class="stat-pill danger">Issues Found: 0</span>

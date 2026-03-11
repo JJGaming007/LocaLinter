@@ -172,6 +172,43 @@ header p {
   margin-bottom: 1rem;
 }
 
+.results-header-left {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background-color: var(--panel-bg);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.filter-group label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.filter-group select {
+  background: transparent;
+  color: var(--text-main);
+  border: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+}
+
+.filter-group select option {
+  background-color: var(--bg-color);
+  color: var(--text-main);
+}
+
 .results-header h2 {
   font-size: 1.5rem;
   font-weight: 600;
