@@ -7,7 +7,7 @@
   <title>LocaLinter</title>
   <link rel="stylesheet" href="styles.css" />
   <script src="assets/xlsx.min.js"></script>
-  <script type="module" src="main.js" defer></script>
+  <script src="main.js" defer></script>
 </head>
 
 <body>
@@ -78,6 +78,7 @@
             class="badge">0</span></button>
         <button class="tab-btn" data-tab="missing-locales">Missing Localizations <span id="badge-missing"
             class="badge">0</span></button>
+        <button class="tab-btn" data-tab="search">Search</button>
       </div>
 
       <div id="tab-format-issues" class="tab-content active">
@@ -113,6 +114,55 @@
               <!-- Results go here -->
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- ── Search Tab ── -->
+      <div id="tab-search" class="tab-content">
+        <div class="search-tab-wrap">
+
+          <!-- Search input -->
+          <div class="search-row">
+            <div class="search-input-wrap">
+              <svg class="search-ico" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="search-query" class="search-query-input" placeholder="Type to search across all columns…" autocomplete="off" spellcheck="false" />
+              <button class="search-clear-x" id="search-clear-x" title="Clear">✕</button>
+            </div>
+
+            <!-- Mode selector -->
+            <div class="search-modes" id="searchModes">
+              <button class="smode active" data-mode="contains">⊃ Contains</button>
+              <button class="smode" data-mode="startsWith">⊢ Starts With</button>
+              <button class="smode" data-mode="endsWith">⊣ Ends With</button>
+              <button class="smode" data-mode="exact">= Exact</button>
+              <button class="smode" data-mode="word">W Word</button>
+              <button class="smode" data-mode="regex">.* Regex</button>
+            </div>
+          </div>
+
+          <!-- Options row -->
+          <div class="search-options-row">
+            <label class="stoggle">
+              <input type="checkbox" id="s-case" />
+              <span class="stoggle-track"></span>
+              Case Sensitive
+            </label>
+            <div class="search-col-chips" id="searchColChips"></div>
+          </div>
+
+          <!-- Summary -->
+          <div class="search-summary" id="searchSummary">Load a file and type a query to search.</div>
+
+          <!-- Results table -->
+          <div class="table-wrapper" id="searchTableWrap" style="display:none;">
+            <table id="search-results-table">
+              <thead id="search-thead"></thead>
+              <tbody id="search-tbody"></tbody>
+            </table>
+          </div>
+
+          <!-- Pagination -->
+          <div class="search-pagination" id="searchPagination"></div>
         </div>
       </div>
     </div>

@@ -20,6 +20,30 @@ window.addEventListener('DOMContentLoaded', () => {
   const saveIgnoreBtn = document.getElementById('save-ignore-btn');
   const langFilter = document.getElementById('lang-filter');
 
+  // ── Search tab DOM refs ──
+  const searchQueryInput  = document.getElementById('search-query');
+  const searchClearX      = document.getElementById('search-clear-x');
+  const searchModesEl     = document.getElementById('searchModes');
+  const sCaseChk          = document.getElementById('s-case');
+  const searchColChips    = document.getElementById('searchColChips');
+  const searchSummary     = document.getElementById('searchSummary');
+  const searchTableWrap   = document.getElementById('searchTableWrap');
+  const searchThead       = document.getElementById('search-thead');
+  const searchTbody       = document.getElementById('search-tbody');
+  const searchPagination  = document.getElementById('searchPagination');
+
+  // ── Search state ──
+  const srch = {
+    query: '',
+    mode: 'contains',
+    caseSensitive: false,
+    cols: [],         // active columns to search
+    allCols: [],      // all columns from sheet
+    rows: [],         // flat object rows derived from currentRows
+    page: 1,
+    pageSize: 50,
+  };
+
   let allFormatIssues = [];
   let allMissingIssues = [];
   let currentScannedCount = 0;
@@ -144,6 +168,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
       showLoadedState(currentFileName);
       validateData(currentRows);
+      initSearchTab(currentRows);
     };
     reader.readAsArrayBuffer(file);
   }
@@ -161,6 +186,7 @@ window.addEventListener('DOMContentLoaded', () => {
     currentRows = data.rows;
     showLoadedState(currentFileName);
     validateData(currentRows);
+    initSearchTab(currentRows);
   });
 
   function checkBrackets(text) {
@@ -479,4 +505,230 @@ window.addEventListener('DOMContentLoaded', () => {
   function escapeHtml(unsafe) {
     return (unsafe || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   }
+
+  /* ============================================================
+     SEARCH TAB
+     ============================================================ */
+
+  function initSearchTab(rows) {
+    if (!rows || rows.length < 1) return;
+    const headers = rows[0].map((h, i) => (h != null && String(h).trim()) ? String(h).trim() : `Col ${i + 1}`);
+    srch.allCols = headers;
+    srch.cols    = [...headers];
+    srch.rows    = buildFlatRows(rows, headers);
+    srch.query   = '';
+    srch.page    = 1;
+    searchQueryInput.value = '';
+    searchClearX.style.display = 'none';
+    buildColChips(headers);
+    renderSearch();
+  }
+
+  function buildFlatRows(rawRows, headers) {
+    const flat = [];
+    for (let i = 1; i < rawRows.length; i++) {
+      const r = rawRows[i];
+      if (!r || r.every(c => c == null || String(c).trim() === '')) continue;
+      const obj = {};
+      headers.forEach((h, idx) => { obj[h] = r[idx] != null ? String(r[idx]) : ''; });
+      flat.push(obj);
+    }
+    return flat;
+  }
+
+  function buildColChips(headers) {
+    searchColChips.innerHTML = '';
+    if (headers.length <= 1) return;
+    const lbl = document.createElement('span');
+    lbl.textContent = 'Search in:';
+    lbl.style.cssText = 'font-size:0.78rem;color:var(--text-muted);align-self:center;';
+    searchColChips.appendChild(lbl);
+    headers.forEach(col => {
+      const chip = document.createElement('button');
+      chip.className = 'scol-chip active';
+      chip.textContent = col;
+      chip.dataset.col = col;
+      chip.addEventListener('click', () => {
+        if (srch.cols.includes(col)) {
+          if (srch.cols.length === 1) return;
+          srch.cols = srch.cols.filter(c => c !== col);
+          chip.classList.remove('active');
+        } else {
+          srch.cols.push(col);
+          chip.classList.add('active');
+        }
+        srch.page = 1;
+        renderSearch();
+      });
+      searchColChips.appendChild(chip);
+    });
+  }
+
+  // ── Search matcher ──
+  function buildMatcher(query, mode, cs) {
+    const q = cs ? query : query.toLowerCase();
+    const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    switch (mode) {
+      case 'exact':      return v => (cs ? v : v.toLowerCase()) === q;
+      case 'startsWith': return v => (cs ? v : v.toLowerCase()).startsWith(q);
+      case 'endsWith':   return v => (cs ? v : v.toLowerCase()).endsWith(q);
+      case 'word': try { const wr = new RegExp(`\\b${esc(query)}\\b`, cs ? 'g' : 'gi'); return v => wr.test(v); } catch(_){ return ()=>false; }
+      case 'regex': try { const rr = new RegExp(query, cs ? 'g' : 'gi'); return v => rr.test(v); } catch(_){ return ()=>false; }
+      default: return v => (cs ? v : v.toLowerCase()).includes(q);
+    }
+  }
+
+  function getSearchResults() {
+    if (!srch.query.trim()) return srch.rows;
+    const matcher = buildMatcher(srch.query, srch.mode, srch.caseSensitive);
+    return srch.rows.filter(row => srch.cols.some(col => matcher(row[col] ?? '')));
+  }
+
+  // ── Highlight matches ──
+  function hlMatch(text, query, mode, cs) {
+    if (!query) return escapeHtml(text);
+    const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    try {
+      let pat;
+      if (mode === 'regex')      pat = query;
+      else if (mode === 'word')  pat = `\\b${esc(query)}\\b`;
+      else if (mode === 'startsWith') pat = `^${esc(query)}`;
+      else if (mode === 'endsWith')   pat = `${esc(query)}$`;
+      else if (mode === 'exact')      pat = `^${esc(query)}$`;
+      else                            pat = esc(query);
+      const re = new RegExp(`(${pat})`, cs ? 'g' : 'gi');
+      return text.split(re).map((p, i) =>
+        i % 2 === 1 ? `<mark class="srch-hl">${escapeHtml(p)}</mark>` : escapeHtml(p)
+      ).join('');
+    } catch(_) { return escapeHtml(text); }
+  }
+
+  // ── Render search results ──
+  function renderSearch() {
+    const query   = srch.query.trim();
+    const matched = getSearchResults();
+    const total   = matched.length;
+    const totalPg = Math.max(1, Math.ceil(total / srch.pageSize));
+    srch.page     = Math.min(srch.page, totalPg);
+    const start   = (srch.page - 1) * srch.pageSize;
+    const pageRows = matched.slice(start, start + srch.pageSize);
+
+    // Summary
+    if (!srch.rows.length) {
+      searchSummary.textContent = 'Load a file and type a query to search.';
+      searchTableWrap.style.display = 'none';
+      searchPagination.innerHTML = '';
+      return;
+    }
+    if (!query) {
+      searchSummary.innerHTML = `<span class="srch-count">${srch.rows.length.toLocaleString()}</span> rows loaded — type a query above.`;
+      searchTableWrap.style.display = 'none';
+      searchPagination.innerHTML = '';
+      return;
+    }
+
+    searchSummary.innerHTML =
+      `<span class="srch-count">${total.toLocaleString()}</span> result${total !== 1 ? 's' : ''} for
+       <strong>&ldquo;${escapeHtml(query)}&rdquo;</strong>
+       <span class="srch-mode-tag">${srch.mode}</span>
+       <span style="color:var(--text-muted)">of ${srch.rows.length.toLocaleString()} rows</span>`;
+
+    // Build table head
+    searchThead.innerHTML = '';
+    const hr = document.createElement('tr');
+    srch.allCols.forEach(col => {
+      const th = document.createElement('th');
+      th.textContent = col;
+      hr.appendChild(th);
+    });
+    searchThead.appendChild(hr);
+
+    // Build table body
+    searchTbody.innerHTML = '';
+    if (!pageRows.length) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td colspan="${srch.allCols.length}" class="success-state"><h3>No matches found</h3><p>Try a different mode or query.</p></td>`;
+      searchTbody.appendChild(tr);
+    } else {
+      pageRows.forEach(row => {
+        const tr = document.createElement('tr');
+        srch.allCols.forEach(col => {
+          const td = document.createElement('td');
+          const val = row[col] ?? '';
+          td.innerHTML = srch.cols.includes(col) && query
+            ? hlMatch(val, query, srch.mode, srch.caseSensitive)
+            : escapeHtml(val);
+          td.title = val;
+          tr.appendChild(td);
+        });
+        searchTbody.appendChild(tr);
+      });
+    }
+    searchTableWrap.style.display = '';
+
+    // Pagination
+    renderSearchPagination(totalPg, total);
+  }
+
+  function renderSearchPagination(totalPg, total) {
+    searchPagination.innerHTML = '';
+    if (totalPg <= 1) return;
+    const cur = srch.page;
+    const mk = (label, pg, disabled, active) => {
+      const b = document.createElement('button');
+      b.className = 'spg-btn' + (active ? ' active' : '');
+      b.textContent = label;
+      b.disabled = !!disabled;
+      b.addEventListener('click', () => { srch.page = pg; renderSearch(); document.getElementById('tab-search').scrollIntoView({ behavior: 'smooth' }); });
+      return b;
+    };
+    searchPagination.appendChild(mk('‹', cur - 1, cur === 1));
+    const range = new Set([1, totalPg]);
+    for (let i = Math.max(2, cur - 2); i <= Math.min(totalPg - 1, cur + 2); i++) range.add(i);
+    let last = 0;
+    [...range].sort((a,b) => a-b).forEach(p => {
+      if (p - last > 1) { const el = document.createElement('span'); el.className = 'spg-ellipsis'; el.textContent = '…'; searchPagination.appendChild(el); }
+      searchPagination.appendChild(mk(p, p, false, p === cur));
+      last = p;
+    });
+    searchPagination.appendChild(mk('›', cur + 1, cur === totalPg));
+    const info = document.createElement('span');
+    info.className = 'spg-info';
+    info.textContent = `${(cur-1)*srch.pageSize+1}–${Math.min(cur*srch.pageSize, total)} of ${total.toLocaleString()}`;
+    searchPagination.appendChild(info);
+  }
+
+  // ── Search event listeners ──
+  let srchDebounce;
+  searchQueryInput.addEventListener('input', () => {
+    srch.query = searchQueryInput.value;
+    searchClearX.style.display = srch.query ? 'flex' : 'none';
+    srch.page = 1;
+    clearTimeout(srchDebounce);
+    srchDebounce = setTimeout(renderSearch, 150);
+  });
+  searchQueryInput.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { searchQueryInput.value = ''; srch.query = ''; searchClearX.style.display = 'none'; srch.page = 1; renderSearch(); }
+  });
+  searchClearX.addEventListener('click', () => {
+    searchQueryInput.value = ''; srch.query = ''; searchClearX.style.display = 'none'; srch.page = 1; renderSearch(); searchQueryInput.focus();
+  });
+  searchModesEl.addEventListener('click', e => {
+    const btn = e.target.closest('.smode');
+    if (!btn) return;
+    searchModesEl.querySelectorAll('.smode').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    srch.mode = btn.dataset.mode;
+    srch.page = 1;
+    renderSearch();
+  });
+  sCaseChk.addEventListener('change', () => { srch.caseSensitive = sCaseChk.checked; srch.page = 1; renderSearch(); });
+
+  // Double-click a search result cell to copy
+  searchTbody.addEventListener('dblclick', e => {
+    const td = e.target.closest('td');
+    if (!td) return;
+    navigator.clipboard.writeText(td.textContent).catch(() => {});
+  });
+
 });
