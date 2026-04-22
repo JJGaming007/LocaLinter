@@ -172,12 +172,20 @@ window.addEventListener('DOMContentLoaded', () => {
     fileInput.value = '';
   });
 
+  function switchTab(tabId) {
+    const targetBtn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+    if (!targetBtn) return;
+    tabBtns.forEach(b => b.classList.remove('active'));
+    tabContents.forEach(c => c.classList.remove('active'));
+    targetBtn.classList.add('active');
+    const content = document.getElementById('tab-' + tabId);
+    if (content) content.classList.add('active');
+    localStorage.setItem('locaLinterActiveTab', tabId);
+  }
+
   tabBtns.forEach(btn => {
     btn.addEventListener('click', () => {
-      tabBtns.forEach(b => b.classList.remove('active'));
-      tabContents.forEach(c => c.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      switchTab(btn.dataset.tab);
     });
   });
 
@@ -245,6 +253,12 @@ window.addEventListener('DOMContentLoaded', () => {
     showLoadedState(currentFileName);
     validateData(currentRows);
     initSearchTab(currentRows);
+
+    // Restore active tab after data is ready
+    const savedTab = localStorage.getItem('locaLinterActiveTab');
+    if (savedTab) {
+      switchTab(savedTab);
+    }
   });
 
   function checkBrackets(text) {
@@ -603,6 +617,12 @@ window.addEventListener('DOMContentLoaded', () => {
       srch.cols = [...headers];
     }
 
+    const savedCase = localStorage.getItem('locaLinterSearchCase');
+    if (savedCase) {
+      sCaseChk.checked = savedCase === 'true';
+      srch.caseSensitive = sCaseChk.checked;
+    }
+
     const savedWrap = localStorage.getItem('locaLinterSearchWrap');
     if (savedWrap !== 'false') { // Default to true if not explicitly saved as false
       sWrapChk.checked = true;
@@ -613,10 +633,29 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     srch.rows    = buildFlatRows(rows, headers);
-    srch.query   = '';
+    
+    // Restore search query
+    const savedQuery = localStorage.getItem('locaLinterSearchQuery');
+    if (savedQuery !== null && savedQuery !== undefined) {
+      srch.query = savedQuery;
+      searchQueryInput.value = savedQuery;
+      searchClearX.style.display = srch.query ? 'flex' : 'none';
+    } else {
+      srch.query = '';
+      searchQueryInput.value = '';
+      searchClearX.style.display = 'none';
+    }
+
+    // Restore match mode
+    const savedMode = localStorage.getItem('locaLinterSearchMode');
+    if (savedMode) {
+      srch.mode = savedMode;
+      searchModesEl.querySelectorAll('.smode').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === savedMode);
+      });
+    }
+
     srch.page    = 1;
-    searchQueryInput.value = '';
-    searchClearX.style.display = 'none';
     buildColChips(headers);
     renderSearch();
   }
@@ -853,6 +892,7 @@ window.addEventListener('DOMContentLoaded', () => {
   let srchDebounce;
   searchQueryInput.addEventListener('input', () => {
     srch.query = searchQueryInput.value;
+    localStorage.setItem('locaLinterSearchQuery', srch.query);
     searchClearX.style.display = srch.query ? 'flex' : 'none';
     srch.page = 1;
     clearTimeout(srchDebounce);
@@ -862,7 +902,9 @@ window.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Escape') { searchQueryInput.value = ''; srch.query = ''; searchClearX.style.display = 'none'; srch.page = 1; renderSearch(); }
   });
   searchClearX.addEventListener('click', () => {
-    searchQueryInput.value = ''; srch.query = ''; searchClearX.style.display = 'none'; srch.page = 1; renderSearch(); searchQueryInput.focus();
+    searchQueryInput.value = ''; srch.query = ''; 
+    localStorage.setItem('locaLinterSearchQuery', '');
+    searchClearX.style.display = 'none'; srch.page = 1; renderSearch(); searchQueryInput.focus();
   });
 
   searchOptionsBtn.addEventListener('click', () => {
@@ -881,10 +923,16 @@ window.addEventListener('DOMContentLoaded', () => {
     searchModesEl.querySelectorAll('.smode').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     srch.mode = btn.dataset.mode;
+    localStorage.setItem('locaLinterSearchMode', srch.mode);
     srch.page = 1;
     renderSearch();
   });
-  sCaseChk.addEventListener('change', () => { srch.caseSensitive = sCaseChk.checked; srch.page = 1; renderSearch(); });
+  sCaseChk.addEventListener('change', () => { 
+    srch.caseSensitive = sCaseChk.checked; 
+    localStorage.setItem('locaLinterSearchCase', sCaseChk.checked);
+    srch.page = 1; 
+    renderSearch(); 
+  });
   
   sWrapChk.addEventListener('change', () => {
     localStorage.setItem('locaLinterSearchWrap', sWrapChk.checked);
