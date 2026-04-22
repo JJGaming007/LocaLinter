@@ -1094,7 +1094,7 @@ mark.srch-hl {
   position: fixed;
   bottom: 5.5rem;
   left: 2rem;
-  width: 320px;
+  width: 420px;
   background: rgba(20, 25, 30, 0.95);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -1198,10 +1198,7 @@ mark.srch-hl {
 
 #qt-translate-btn {
   flex-shrink: 0;
-  max-width: 55%;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .qt-controls select option {
