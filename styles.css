@@ -1180,6 +1180,7 @@ mark.srch-hl {
 
 .qt-controls select {
   flex: 1;
+  min-width: 0;
   background: rgba(255,255,255,0.05);
   color: var(--text);
   border: 1px solid var(--border);
@@ -1188,6 +1189,19 @@ mark.srch-hl {
   font-family: var(--font);
   font-size: 0.8rem;
   outline: none;
+}
+
+.qt-controls .cs-wrapper {
+  flex: 1;
+  min-width: 0;
+}
+
+#qt-translate-btn {
+  flex-shrink: 0;
+  max-width: 55%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .qt-controls select option {
