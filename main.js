@@ -549,7 +549,7 @@ window.addEventListener('DOMContentLoaded', () => {
     searchColChips.innerHTML = '';
     if (headers.length <= 1) return;
     const lbl = document.createElement('span');
-    lbl.textContent = 'Search in:';
+    lbl.textContent = 'Show & Search:';
     lbl.style.cssText = 'font-size:0.78rem;color:var(--text-muted);align-self:center;';
     searchColChips.appendChild(lbl);
     headers.forEach(col => {
@@ -642,10 +642,13 @@ window.addEventListener('DOMContentLoaded', () => {
        <span class="srch-mode-tag">${srch.mode}</span>
        <span style="color:var(--text-muted)">of ${srch.rows.length.toLocaleString()} rows</span>`;
 
+    // Determine which columns to display (Always show Key [idx 0], plus any selected columns)
+    const displayCols = srch.allCols.filter((col, idx) => idx === 0 || srch.cols.includes(col));
+
     // Build table head
     searchThead.innerHTML = '';
     const hr = document.createElement('tr');
-    srch.allCols.forEach(col => {
+    displayCols.forEach(col => {
       const th = document.createElement('th');
       th.textContent = col;
       hr.appendChild(th);
@@ -656,12 +659,12 @@ window.addEventListener('DOMContentLoaded', () => {
     searchTbody.innerHTML = '';
     if (!pageRows.length) {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td colspan="${srch.allCols.length}" class="success-state"><h3>No matches found</h3><p>Try a different mode or query.</p></td>`;
+      tr.innerHTML = `<td colspan="${displayCols.length}" class="success-state"><h3>No matches found</h3><p>Try a different mode or query.</p></td>`;
       searchTbody.appendChild(tr);
     } else {
       pageRows.forEach(row => {
         const tr = document.createElement('tr');
-        srch.allCols.forEach(col => {
+        displayCols.forEach(col => {
           const td = document.createElement('td');
           const val = row[col] ?? '';
           td.innerHTML = srch.cols.includes(col) && query
