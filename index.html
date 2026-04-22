@@ -224,24 +224,40 @@
               <input type="text" id="search-query" class="search-query-input"
                 placeholder="Type to search across all columns…" autocomplete="off" spellcheck="false" />
               <button class="search-clear-x" id="search-clear-x" title="Clear">✕</button>
-            </div>
-            <div class="search-modes" id="searchModes">
-              <button class="smode active" data-mode="contains">⊃ Contains</button>
-              <button class="smode" data-mode="startsWith">⊢ Starts With</button>
-              <button class="smode" data-mode="endsWith">⊣ Ends With</button>
-              <button class="smode" data-mode="exact">= Exact</button>
-              <button class="smode" data-mode="word">W Word</button>
-              <button class="smode" data-mode="regex">.* Regex</button>
+              <button class="search-options-btn" id="search-options-btn" title="Toggle Search Options">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+              </button>
             </div>
           </div>
 
-          <div class="search-options-row">
-            <label class="stoggle">
-              <input type="checkbox" id="s-case" />
-              <span class="stoggle-track"></span>
-              Case Sensitive
-            </label>
-            <div class="search-col-chips" id="searchColChips"></div>
+          <div class="search-options-panel hidden" id="search-options-panel">
+            <div class="search-opt-group">
+              <span class="search-opt-label">Match Mode:</span>
+              <div class="search-modes-pill" id="searchModes">
+                <button class="smode active" data-mode="contains">Contains</button>
+                <button class="smode" data-mode="startsWith">Starts</button>
+                <button class="smode" data-mode="endsWith">Ends</button>
+                <button class="smode" data-mode="exact">Exact</button>
+                <button class="smode" data-mode="word">Word</button>
+                <button class="smode" data-mode="regex">Regex</button>
+              </div>
+              <div class="search-opt-toggles" style="display:flex; gap:1rem; margin-left:auto;">
+                <label class="stoggle">
+                  <input type="checkbox" id="s-wrap" />
+                  <span class="stoggle-track"></span>
+                  Wrap Text
+                </label>
+                <label class="stoggle" style="margin-left: 0;">
+                  <input type="checkbox" id="s-case" />
+                  <span class="stoggle-track"></span>
+                  Case Sensitive
+                </label>
+              </div>
+            </div>
+            <div class="search-opt-group cols-group">
+              <span class="search-opt-label">Columns:</span>
+              <div class="search-col-chips" id="searchColChips"></div>
+            </div>
           </div>
 
           <div class="search-summary" id="searchSummary">Load a file and type a query to search.</div>

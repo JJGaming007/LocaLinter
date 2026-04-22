@@ -25,8 +25,11 @@ window.addEventListener('DOMContentLoaded', () => {
   // ── Search tab DOM refs ──
   const searchQueryInput  = document.getElementById('search-query');
   const searchClearX      = document.getElementById('search-clear-x');
+  const searchOptionsBtn  = document.getElementById('search-options-btn');
+  const searchOptionsPanel= document.getElementById('search-options-panel');
   const searchModesEl     = document.getElementById('searchModes');
   const sCaseChk          = document.getElementById('s-case');
+  const sWrapChk          = document.getElementById('s-wrap');
   const searchColChips    = document.getElementById('searchColChips');
   const searchSummary     = document.getElementById('searchSummary');
   const searchTableWrap   = document.getElementById('searchTableWrap');
@@ -81,7 +84,8 @@ window.addEventListener('DOMContentLoaded', () => {
     btn.textContent = 'Translating...';
     btn.disabled = true;
 
-    const translation = await fetchTranslation(englishText, 'en', safeLangCode === 'auto' ? '' : langCode);
+    const responseObj = await fetchTranslation(englishText, 'en', safeLangCode === 'auto' ? '' : langCode);
+    const translation = responseObj.text;
 
     if (translation && !translation.startsWith('Error')) {
       const td = btn.closest('td');
@@ -556,15 +560,20 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   async function fetchTranslation(text, sourceLang, targetLang) {
-    if (!text.trim()) return '';
+    if (!text.trim()) return { text: '', detected: '' };
     try {
       const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
       const response = await fetch(url);
       const data = await response.json();
-      return data[0].map(x => x[0]).join('');
+      const transText = data[0].map(x => x[0]).join('');
+      let detected = '';
+      if (sourceLang === 'auto' && data[2]) {
+        detected = data[2]; // e.g. 'es'
+      }
+      return { text: transText, detected };
     } catch (e) {
       console.error('Translation failed:', e);
-      return 'Error fetching translation. Please try again.';
+      return { text: 'Error fetching translation. Please try again.', detected: '' };
     }
   }
 
@@ -594,6 +603,15 @@ window.addEventListener('DOMContentLoaded', () => {
       srch.cols = [...headers];
     }
 
+    const savedWrap = localStorage.getItem('locaLinterSearchWrap');
+    if (savedWrap !== 'false') { // Default to true if not explicitly saved as false
+      sWrapChk.checked = true;
+      searchTableWrap.classList.add('wrap-text');
+    } else {
+      sWrapChk.checked = false;
+      searchTableWrap.classList.remove('wrap-text');
+    }
+
     srch.rows    = buildFlatRows(rows, headers);
     srch.query   = '';
     srch.page    = 1;
@@ -617,32 +635,81 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function buildColChips(headers) {
     searchColChips.innerHTML = '';
-    if (headers.length <= 1) return;
-    const lbl = document.createElement('span');
-    lbl.textContent = 'Show & Search:';
-    lbl.style.cssText = 'font-size:0.78rem;color:var(--text-muted);align-self:center;';
-    searchColChips.appendChild(lbl);
-    headers.forEach(col => {
-      const chip = document.createElement('button');
-      const isActive = srch.cols.includes(col);
-      chip.className = isActive ? 'scol-chip active' : 'scol-chip';
-      chip.textContent = col;
-      chip.dataset.col = col;
-      chip.addEventListener('click', () => {
-        if (srch.cols.includes(col)) {
-          if (srch.cols.length === 1) return;
-          srch.cols = srch.cols.filter(c => c !== col);
-          chip.classList.remove('active');
-        } else {
-          srch.cols.push(col);
-          chip.classList.add('active');
-        }
-        localStorage.setItem('locaLinterSearchCols', JSON.stringify(srch.cols));
-        srch.page = 1;
-        renderSearch();
+    if (headers.length <= 1) {
+      searchColChips.parentElement.style.display = 'none';
+      return;
+    }
+    searchColChips.parentElement.style.display = 'flex';
+
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.gap = '0.5rem';
+    actions.style.marginBottom = '0.6rem';
+    
+    const selectAll = document.createElement('button');
+    selectAll.className = 'smode';
+    selectAll.style.padding = '0.15rem 0.5rem';
+    selectAll.textContent = 'Select All';
+    
+    const clearAll = document.createElement('button');
+    clearAll.className = 'smode';
+    clearAll.style.padding = '0.15rem 0.5rem';
+    clearAll.textContent = 'Clear All';
+    
+    actions.appendChild(selectAll);
+    actions.appendChild(clearAll);
+    searchColChips.appendChild(actions);
+
+    const grid = document.createElement('div');
+    grid.className = 'cols-grid';
+
+    const checkboxes = [];
+
+    function updateAll() {
+      checkboxes.forEach(cb => {
+        cb.checked = srch.cols.includes(cb.dataset.col);
       });
-      searchColChips.appendChild(chip);
+      localStorage.setItem('locaLinterSearchCols', JSON.stringify(srch.cols));
+      srch.page = 1;
+      renderSearch();
+    }
+
+    selectAll.onclick = () => { srch.cols = [...headers]; updateAll(); };
+    clearAll.onclick = () => { srch.cols = []; updateAll(); };
+
+    headers.forEach(col => {
+      const label = document.createElement('label');
+      label.className = 'col-checkbox';
+      
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.dataset.col = col;
+      checkbox.checked = srch.cols.includes(col);
+      
+      const text = document.createElement('span');
+      text.textContent = col;
+      
+      label.appendChild(checkbox);
+      label.appendChild(text);
+      
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) {
+          srch.cols.push(col);
+        } else {
+          if (srch.cols.length === 1) {
+            checkbox.checked = true;
+            return;
+          }
+          srch.cols = srch.cols.filter(c => c !== col);
+        }
+        updateAll();
+      });
+      
+      checkboxes.push(checkbox);
+      grid.appendChild(label);
     });
+    
+    searchColChips.appendChild(grid);
   }
 
   // ── Search matcher ──
@@ -797,6 +864,17 @@ window.addEventListener('DOMContentLoaded', () => {
   searchClearX.addEventListener('click', () => {
     searchQueryInput.value = ''; srch.query = ''; searchClearX.style.display = 'none'; srch.page = 1; renderSearch(); searchQueryInput.focus();
   });
+
+  searchOptionsBtn.addEventListener('click', () => {
+    searchOptionsPanel.classList.toggle('hidden');
+    if (!searchOptionsPanel.classList.contains('hidden')) {
+      searchOptionsBtn.style.color = 'var(--text)';
+    } else {
+      searchOptionsBtn.style.color = 'var(--muted)';
+    }
+  });
+
+  let searchDebounce;
   searchModesEl.addEventListener('click', e => {
     const btn = e.target.closest('.smode');
     if (!btn) return;
@@ -807,6 +885,15 @@ window.addEventListener('DOMContentLoaded', () => {
     renderSearch();
   });
   sCaseChk.addEventListener('change', () => { srch.caseSensitive = sCaseChk.checked; srch.page = 1; renderSearch(); });
+  
+  sWrapChk.addEventListener('change', () => {
+    localStorage.setItem('locaLinterSearchWrap', sWrapChk.checked);
+    if (sWrapChk.checked) {
+      searchTableWrap.classList.add('wrap-text');
+    } else {
+      searchTableWrap.classList.remove('wrap-text');
+    }
+  });
 
   // Double-click a search result cell to copy
   searchTbody.addEventListener('dblclick', e => {
@@ -937,8 +1024,13 @@ window.addEventListener('DOMContentLoaded', () => {
 
     const translation = await fetchTranslation(text, sourceLang, targetLang);
     
-    qtOutput.value = translation;
-    qtBtn.textContent = 'Translate';
+    qtOutput.value = translation.text;
+    if (translation.detected && sourceLang === 'auto') {
+      const detectedName = qtSourceLang.querySelector(`option[value="${translation.detected}"]`)?.textContent || translation.detected.toUpperCase();
+      qtBtn.textContent = `Detected: ${detectedName}`;
+    } else {
+      qtBtn.textContent = 'Translate';
+    }
     qtBtn.disabled = false;
   }
 
@@ -946,6 +1038,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   let translateDebounce;
   qtInput.addEventListener('input', () => {
+    qtBtn.textContent = 'Translate';
     clearTimeout(translateDebounce);
     translateDebounce = setTimeout(triggerTranslation, 600);
   });
