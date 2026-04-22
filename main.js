@@ -580,7 +580,20 @@ window.addEventListener('DOMContentLoaded', () => {
     if (!rows || rows.length < 1) return;
     const headers = rows[0].map((h, i) => (h != null && String(h).trim()) ? String(h).trim() : `Col ${i + 1}`);
     srch.allCols = headers;
-    srch.cols    = [...headers];
+
+    const savedColsStr = localStorage.getItem('locaLinterSearchCols');
+    if (savedColsStr) {
+      try {
+        const savedCols = JSON.parse(savedColsStr);
+        srch.cols = headers.filter(h => savedCols.includes(h));
+        if (srch.cols.length === 0) srch.cols = [...headers];
+      } catch (e) {
+        srch.cols = [...headers];
+      }
+    } else {
+      srch.cols = [...headers];
+    }
+
     srch.rows    = buildFlatRows(rows, headers);
     srch.query   = '';
     srch.page    = 1;
@@ -611,7 +624,8 @@ window.addEventListener('DOMContentLoaded', () => {
     searchColChips.appendChild(lbl);
     headers.forEach(col => {
       const chip = document.createElement('button');
-      chip.className = 'scol-chip active';
+      const isActive = srch.cols.includes(col);
+      chip.className = isActive ? 'scol-chip active' : 'scol-chip';
       chip.textContent = col;
       chip.dataset.col = col;
       chip.addEventListener('click', () => {
@@ -623,6 +637,7 @@ window.addEventListener('DOMContentLoaded', () => {
           srch.cols.push(col);
           chip.classList.add('active');
         }
+        localStorage.setItem('locaLinterSearchCols', JSON.stringify(srch.cols));
         srch.page = 1;
         renderSearch();
       });
