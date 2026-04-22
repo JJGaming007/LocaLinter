@@ -54,6 +54,51 @@ window.addEventListener('DOMContentLoaded', () => {
     filterResults();
   });
 
+  // Handle inline translations in the missing table
+  missingBody.addEventListener('click', async (e) => {
+    const copyBtn = e.target.closest('.inline-copy-btn');
+    if (copyBtn) {
+      const input = copyBtn.previousElementSibling;
+      const textToCopy = input ? input.value : copyBtn.dataset.translation;
+      
+      navigator.clipboard.writeText(textToCopy).then(() => {
+        copyBtn.classList.add('copied');
+        setTimeout(() => copyBtn.classList.remove('copied'), 2000);
+        showToast('Translation copied!');
+      });
+      return;
+    }
+
+    const btn = e.target.closest('.inline-translate-btn');
+    if (!btn) return;
+
+    const englishText = btn.dataset.text;
+    const langCode = btn.dataset.lang;
+
+    // Use default 'auto' if language wasn't matched properly
+    const safeLangCode = (langCode === 'auto') ? btn.closest('tr').children[1].textContent : langCode;
+
+    btn.textContent = 'Translating...';
+    btn.disabled = true;
+
+    const translation = await fetchTranslation(englishText, 'en', safeLangCode === 'auto' ? '' : langCode);
+
+    if (translation && !translation.startsWith('Error')) {
+      const td = btn.closest('td');
+      td.innerHTML = `
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <input type="text" class="text-snippet" value="${escapeHtml(translation).replace(/"/g, '&quot;')}" style="background: rgba(63,185,80,0.1); border: 1px solid rgba(63,185,80,0.3); color: var(--success); width: 100%; padding: 0.2rem 0.5rem; outline: none; border-radius: 4px; font-family: var(--font);" />
+          <button class="qt-copy-btn inline-copy-btn" title="Copy" style="position: static; flex-shrink: 0;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+      `;
+    } else {
+      btn.textContent = 'Failed. Retry?';
+      btn.disabled = false;
+    }
+  });
+
   let currentRows = null;
   let currentFileName = "";
   const DB_NAME = 'LocaLinterDB';
@@ -472,17 +517,17 @@ window.addEventListener('DOMContentLoaded', () => {
     } else {
       missingIssues.forEach(issue => {
         const tr = document.createElement('tr');
-        const translateUrl = getGoogleTranslateUrl(issue.lang, issue.englishText);
+        const langCode = getLangCodeForName(issue.lang);
         const rowSpan = issue.rowNum ? ` <span class="row-num" title="Excel Row Number">(Row ${issue.rowNum})</span>` : '';
         tr.innerHTML = `
           <td><strong>${escapeHtml(issue.key)}</strong>${rowSpan}</td>
           <td>${escapeHtml(issue.lang)}</td>
           <td><span class="text-snippet">${escapeHtml(issue.englishText)}</span></td>
-          <td>
-            <a href="${translateUrl}" target="_blank" class="translate-btn">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+          <td class="inline-trans-cell">
+            <button class="btn btn-primary sm-btn inline-translate-btn" data-text="${escapeHtml(issue.englishText)}" data-lang="${langCode}">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
               Translate
-            </a>
+            </button>
           </td>
         `;
         missingBody.appendChild(tr);
@@ -490,7 +535,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function getGoogleTranslateUrl(langName, text) {
+  function getLangCodeForName(langName) {
     const langMap = {
       'french': 'fr', 'spanish': 'es', 'german': 'de', 'italian': 'it',
       'portuguese': 'pt', 'russian': 'ru', 'japanese': 'ja', 'korean': 'ko',
@@ -507,8 +552,20 @@ window.addEventListener('DOMContentLoaded', () => {
         break;
       }
     }
+    return tl;
+  }
 
-    return `https://translate.google.com/?sl=en&tl=${tl}&text=${encodeURIComponent(text)}&op=translate`;
+  async function fetchTranslation(text, sourceLang, targetLang) {
+    if (!text.trim()) return '';
+    try {
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
+      const response = await fetch(url);
+      const data = await response.json();
+      return data[0].map(x => x[0]).join('');
+    } catch (e) {
+      console.error('Translation failed:', e);
+      return 'Error fetching translation. Please try again.';
+    }
   }
 
   function escapeHtml(unsafe) {
@@ -750,10 +807,94 @@ window.addEventListener('DOMContentLoaded', () => {
   const qtPanel = document.getElementById('qt-panel');
   const qtClose = document.getElementById('qt-close');
   const qtInput = document.getElementById('qt-input');
+  const qtSourceLang = document.getElementById('qt-source-lang');
   const qtLang = document.getElementById('qt-lang');
   const qtBtn = document.getElementById('qt-translate-btn');
   const qtOutput = document.getElementById('qt-output');
   const qtCopy = document.getElementById('qt-copy');
+
+  // Convert selects to searchable custom dropdowns
+  function makeSearchableSelect(selectEl) {
+    selectEl.style.display = 'none';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'cs-wrapper';
+
+    const selectedBox = document.createElement('div');
+    selectedBox.className = 'cs-selected';
+    
+    const dropdown = document.createElement('div');
+    dropdown.className = 'cs-dropdown hidden';
+
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'cs-search';
+    searchInput.placeholder = 'Search language...';
+
+    const list = document.createElement('ul');
+    list.className = 'cs-list';
+
+    const options = Array.from(selectEl.options);
+    
+    function renderList(filter = '') {
+      list.innerHTML = '';
+      const f = filter.toLowerCase();
+      options.forEach(opt => {
+        if (opt.text.toLowerCase().includes(f) || opt.value.toLowerCase().includes(f)) {
+          const li = document.createElement('li');
+          li.textContent = opt.text;
+          li.dataset.value = opt.value;
+          if (opt.selected) {
+            li.classList.add('active');
+            selectedBox.textContent = opt.text;
+          }
+          li.addEventListener('click', () => {
+            selectEl.value = opt.value;
+            selectEl.dispatchEvent(new Event('change'));
+            dropdown.classList.add('hidden');
+            selectedBox.textContent = opt.text;
+            renderList(); // reset filter
+            searchInput.value = '';
+          });
+          list.appendChild(li);
+        }
+      });
+    }
+
+    renderList();
+
+    selectedBox.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isHidden = dropdown.classList.contains('hidden');
+      document.querySelectorAll('.cs-dropdown').forEach(d => d.classList.add('hidden'));
+      if (isHidden) {
+        dropdown.classList.remove('hidden');
+        searchInput.focus();
+      }
+    });
+
+    searchInput.addEventListener('input', (e) => renderList(e.target.value));
+    searchInput.addEventListener('click', e => e.stopPropagation());
+
+    document.addEventListener('click', (e) => {
+      if (!wrapper.contains(e.target)) dropdown.classList.add('hidden');
+    });
+
+    // Update custom UI when original select changes via JS
+    selectEl.addEventListener('change', () => {
+      options.forEach(o => o.selected = (o.value === selectEl.value));
+      renderList();
+    });
+
+    dropdown.appendChild(searchInput);
+    dropdown.appendChild(list);
+    wrapper.appendChild(selectedBox);
+    wrapper.appendChild(dropdown);
+    selectEl.parentNode.insertBefore(wrapper, selectEl.nextSibling);
+  }
+
+  makeSearchableSelect(qtSourceLang);
+  makeSearchableSelect(qtLang);
 
   qtToggle.addEventListener('click', () => {
     qtPanel.classList.toggle('hidden');
@@ -766,38 +907,45 @@ window.addEventListener('DOMContentLoaded', () => {
     qtPanel.classList.add('hidden');
   });
 
-  async function fetchTranslation(text, targetLang) {
-    if (!text.trim()) return '';
-    try {
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
-      const response = await fetch(url);
-      const data = await response.json();
-      return data[0].map(x => x[0]).join('');
-    } catch (e) {
-      console.error('Translation failed:', e);
-      return 'Error fetching translation. Please try again.';
-    }
-  }
-
-  qtBtn.addEventListener('click', async () => {
+  async function triggerTranslation() {
     const text = qtInput.value;
+    const sourceLang = qtSourceLang.value;
     const targetLang = qtLang.value;
-    if (!text.trim()) return;
+    if (!text.trim()) {
+      qtOutput.value = '';
+      return;
+    }
 
     qtBtn.textContent = '...';
     qtBtn.disabled = true;
     qtOutput.value = 'Translating...';
 
-    const translation = await fetchTranslation(text, targetLang);
+    const translation = await fetchTranslation(text, sourceLang, targetLang);
     
     qtOutput.value = translation;
     qtBtn.textContent = 'Translate';
     qtBtn.disabled = false;
+  }
+
+  qtBtn.addEventListener('click', triggerTranslation);
+
+  let translateDebounce;
+  qtInput.addEventListener('input', () => {
+    clearTimeout(translateDebounce);
+    translateDebounce = setTimeout(triggerTranslation, 600);
+  });
+  
+  // Also translate automatically when language changes
+  qtSourceLang.addEventListener('change', () => {
+    if (qtInput.value.trim()) triggerTranslation();
+  });
+  qtLang.addEventListener('change', () => {
+    if (qtInput.value.trim()) triggerTranslation();
   });
 
   qtInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-      qtBtn.click();
+      triggerTranslation();
     }
   });
 
