@@ -976,3 +976,172 @@ mark.srch-hl {
 }
 
 .results-header { animation: slideUp 0.4s cubic-bezier(0.16,1,0.3,1); }
+
+/* ============================================================
+   QUICK TRANSLATOR WIDGET
+   ============================================================ */
+.qt-toggle-btn {
+  position: fixed;
+  bottom: 2rem;
+  left: 2rem;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #000;
+  border: none;
+  box-shadow: 0 4px 20px rgba(16,185,129,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 1000;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.qt-toggle-btn:hover {
+  transform: scale(1.1) rotate(5deg);
+  background: var(--accent-hover);
+  box-shadow: 0 6px 24px rgba(16,185,129,0.5);
+}
+
+.qt-panel {
+  position: fixed;
+  bottom: 5.5rem;
+  left: 2rem;
+  width: 320px;
+  background: rgba(20, 25, 30, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(16,185,129,0.1);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  transform-origin: bottom left;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.qt-panel.hidden {
+  opacity: 0;
+  transform: scale(0.9) translateY(20px);
+  pointer-events: none;
+}
+
+.qt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.875rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255,255,255,0.02);
+}
+
+.qt-header h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.qt-close-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: color var(--transition), background var(--transition);
+}
+
+.qt-close-btn:hover {
+  color: var(--text);
+  background: rgba(255,255,255,0.1);
+}
+
+.qt-body {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.qt-body textarea {
+  width: 100%;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.875rem;
+  resize: vertical;
+  transition: border-color var(--transition);
+}
+
+.qt-body textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.qt-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.qt-controls select {
+  flex: 1;
+  background: rgba(255,255,255,0.05);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem;
+  font-family: var(--font);
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.qt-controls select option {
+  background: var(--bg2);
+}
+
+.qt-output-wrap {
+  position: relative;
+}
+
+#qt-output {
+  background: rgba(255,255,255,0.02);
+  border-color: transparent;
+  padding-right: 2.5rem;
+}
+
+.qt-copy-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.qt-copy-btn:hover {
+  color: var(--text);
+  background: rgba(255,255,255,0.15);
+}
+
+.qt-copy-btn.copied {
+  color: var(--success);
+  border-color: rgba(63,185,80,0.4);
+}

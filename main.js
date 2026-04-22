@@ -740,4 +740,71 @@ window.addEventListener('DOMContentLoaded', () => {
     navigator.clipboard.writeText(td.textContent).catch(() => {});
   });
 
+  /* ============================================================
+     QUICK TRANSLATOR WIDGET
+     ============================================================ */
+  const qtToggle = document.getElementById('qt-toggle');
+  const qtPanel = document.getElementById('qt-panel');
+  const qtClose = document.getElementById('qt-close');
+  const qtInput = document.getElementById('qt-input');
+  const qtLang = document.getElementById('qt-lang');
+  const qtBtn = document.getElementById('qt-translate-btn');
+  const qtOutput = document.getElementById('qt-output');
+  const qtCopy = document.getElementById('qt-copy');
+
+  qtToggle.addEventListener('click', () => {
+    qtPanel.classList.toggle('hidden');
+    if (!qtPanel.classList.contains('hidden')) {
+      qtInput.focus();
+    }
+  });
+
+  qtClose.addEventListener('click', () => {
+    qtPanel.classList.add('hidden');
+  });
+
+  async function fetchTranslation(text, targetLang) {
+    if (!text.trim()) return '';
+    try {
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
+      const response = await fetch(url);
+      const data = await response.json();
+      return data[0].map(x => x[0]).join('');
+    } catch (e) {
+      console.error('Translation failed:', e);
+      return 'Error fetching translation. Please try again.';
+    }
+  }
+
+  qtBtn.addEventListener('click', async () => {
+    const text = qtInput.value;
+    const targetLang = qtLang.value;
+    if (!text.trim()) return;
+
+    qtBtn.textContent = '...';
+    qtBtn.disabled = true;
+    qtOutput.value = 'Translating...';
+
+    const translation = await fetchTranslation(text, targetLang);
+    
+    qtOutput.value = translation;
+    qtBtn.textContent = 'Translate';
+    qtBtn.disabled = false;
+  });
+
+  qtInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      qtBtn.click();
+    }
+  });
+
+  qtCopy.addEventListener('click', () => {
+    if (!qtOutput.value.trim()) return;
+    navigator.clipboard.writeText(qtOutput.value).then(() => {
+      qtCopy.classList.add('copied');
+      setTimeout(() => qtCopy.classList.remove('copied'), 2000);
+      showToast('Translation copied!');
+    });
+  });
+
 });
