@@ -4,132 +4,227 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LocaLinter</title>
+  <title>LocaLinter — Localization Validator</title>
+  <meta name="description" content="Validate localization sheets for formatting errors, missing translations, and variable mismatches." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
   <script src="assets/xlsx.min.js"></script>
   <script src="main.js" defer></script>
 </head>
 
 <body>
+  <!-- Toast container -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
   <div class="container">
+    <!-- ── Header ── -->
     <header>
-      <h1>LocaLinter</h1>
-      <p>Drop your .xlsx or .csv sheet to validate formatting, brackets, and variables.</p>
+      <div class="header-logo">
+        <div class="logo-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <div class="header-text">
+          <h1>Loca<span class="accent-text">Linter</span></h1>
+          <p>Drop your .xlsx or .csv sheet to validate formatting, brackets, and variables.</p>
+        </div>
+      </div>
     </header>
+
+    <!-- ── Drop Zone ── -->
     <div id="dropzone" class="dropzone">
       <div id="drop-content-idle" class="drop-content">
-        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none"
-          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-          class="feather feather-upload-cloud">
-          <polyline points="16 16 12 12 8 16"></polyline>
-          <line x1="12" y1="12" x2="12" y2="21"></line>
-          <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path>
-          <polyline points="16 16 12 12 8 16"></polyline>
-        </svg>
-        <p>Drag & Drop your Localization Sheet here</p>
-        <span class="or">OR</span>
-        <button id="browse-btn" class="btn">Browse Files</button>
+        <div class="drop-icon-wrap">
+          <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 16 12 12 8 16"></polyline>
+            <line x1="12" y1="12" x2="12" y2="21"></line>
+            <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path>
+          </svg>
+        </div>
+        <div class="drop-text-group">
+          <p class="drop-main-text">Drag &amp; Drop your Localization Sheet</p>
+          <p class="drop-sub-text">Supports .xlsx and .csv files</p>
+        </div>
+        <span class="or-divider"><span>OR</span></span>
+        <button id="browse-btn" class="btn btn-primary">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          Browse Files
+        </button>
         <input type="file" id="file-input"
           accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
           style="display: none;" />
       </div>
 
       <div id="loaded-content" class="drop-content hidden">
-        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none"
-          class="feather feather-file" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round">
-          <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
-          <polyline points="13 2 13 9 20 9"></polyline>
+        <div class="loaded-icon-wrap">
+          <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+            <polyline points="13 2 13 9 20 9"></polyline>
+          </svg>
+        </div>
+        <p id="loaded-file-name" class="loaded-file-name"></p>
+        <button id="remove-file-btn" class="btn btn-danger sm-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+            <path d="M10 11v6"/><path d="M14 11v6"/>
+            <path d="M9 6V4h6v2"/>
+          </svg>
+          Remove File
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Settings Panel ── -->
+    <details class="settings-panel" id="settings-panel">
+      <summary class="settings-summary">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>
         </svg>
-        <p id="loaded-file-name" style="margin: 1rem 0; color: var(--accent); font-weight: bold;"></p>
-        <button id="remove-file-btn" class="btn sm-btn"
-          style="background-color: var(--danger); border-color: var(--danger-hover);">Remove File</button>
+        <span>Ignored Terms</span>
+        <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+          fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </summary>
+      <div class="settings-body">
+        <label for="ignore-list" class="settings-label">Ignored Terms <span class="label-hint">(comma-separated)</span></label>
+        <p class="settings-desc">These exact English strings will not be flagged as Missing Localizations.</p>
+        <div class="settings-inputs">
+          <textarea id="ignore-list" placeholder="e.g. Zero, Enigma, Void" rows="2"></textarea>
+          <button id="save-ignore-btn" class="btn sm-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+              <polyline points="17 21 17 13 7 13 7 21"/>
+              <polyline points="7 3 7 8 15 8"/>
+            </svg>
+            Save
+          </button>
+        </div>
       </div>
-    </div>
+    </details>
 
-    <div class="settings-panel">
-      <label for="ignore-list">Ignored Terms (comma-separated):</label>
-      <p class="settings-desc">These exact English strings will not be flagged as Missing Localizations.</p>
-      <div class="settings-inputs">
-        <textarea id="ignore-list" placeholder="e.g. Zero, Enigma, Void" rows="2"></textarea>
-        <button id="save-ignore-btn" class="btn sm-btn">Save</button>
-      </div>
-    </div>
-
+    <!-- ── Results Container ── -->
     <div id="results-container" class="hidden">
       <div class="results-header">
-        <h2>Validation Report</h2>
-        <div class="results-controls">
+        <div class="results-title-group">
+          <h2 class="results-title">Validation Report</h2>
           <div class="filter-group">
-            <label for="lang-filter">Filter Language:</label>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+            </svg>
+            <label for="lang-filter">Language:</label>
             <select id="lang-filter">
               <option value="all">All Languages</option>
             </select>
           </div>
-          <div class="stats">
-            <span id="stat-scanned" class="stat-pill neutral">Rows Scanned: 0</span>
-            <span id="stat-issues" class="stat-pill danger">Issues Found: 0</span>
+        </div>
+        <div class="stats">
+          <div id="stat-scanned-container" class="stat-pill neutral">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <span id="stat-scanned">Rows Scanned: 0</span>
+          </div>
+          <div id="stat-issues-container" class="stat-pill danger">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <span id="stat-issues">Issues Found: 0</span>
           </div>
         </div>
       </div>
 
-      <div class="tabs">
-        <button class="tab-btn active" data-tab="format-issues">Format Issues <span id="badge-format"
-            class="badge">0</span></button>
-        <button class="tab-btn" data-tab="missing-locales">Missing Localizations <span id="badge-missing"
-            class="badge">0</span></button>
-        <button class="tab-btn" data-tab="search">Search</button>
+      <!-- Tabs -->
+      <div class="tabs" role="tablist">
+        <button class="tab-btn active" data-tab="format-issues" role="tab" aria-selected="true" id="tab-btn-format">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          Format Issues <span id="badge-format" class="badge">0</span>
+        </button>
+        <button class="tab-btn" data-tab="missing-locales" role="tab" aria-selected="false" id="tab-btn-missing">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/>
+          </svg>
+          Missing Localizations <span id="badge-missing" class="badge">0</span>
+        </button>
+        <button class="tab-btn" data-tab="search" role="tab" aria-selected="false" id="tab-btn-search">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          Search
+        </button>
       </div>
 
+      <!-- Format Issues Tab -->
       <div id="tab-format-issues" class="tab-content active">
         <div class="table-wrapper">
           <table id="results-table">
             <thead>
               <tr>
                 <th>Key (Row)</th>
-                <th>Language (Col)</th>
+                <th>Language</th>
                 <th>Issue Details</th>
                 <th>Text Snippet</th>
               </tr>
             </thead>
-            <tbody id="results-body">
-              <!-- Results go here -->
-            </tbody>
+            <tbody id="results-body"></tbody>
           </table>
         </div>
       </div>
 
+      <!-- Missing Locales Tab -->
       <div id="tab-missing-locales" class="tab-content">
         <div class="table-wrapper">
           <table id="missing-table">
             <thead>
               <tr>
                 <th>Key (Row)</th>
-                <th>Language (Col)</th>
+                <th>Language</th>
                 <th>Missing English Text</th>
                 <th>Action</th>
               </tr>
             </thead>
-            <tbody id="missing-body">
-              <!-- Results go here -->
-            </tbody>
+            <tbody id="missing-body"></tbody>
           </table>
         </div>
       </div>
 
-      <!-- ── Search Tab ── -->
+      <!-- Search Tab -->
       <div id="tab-search" class="tab-content">
         <div class="search-tab-wrap">
-
-          <!-- Search input -->
           <div class="search-row">
             <div class="search-input-wrap">
-              <svg class="search-ico" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input type="text" id="search-query" class="search-query-input" placeholder="Type to search across all columns…" autocomplete="off" spellcheck="false" />
+              <svg class="search-ico" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" stroke-width="2.2">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input type="text" id="search-query" class="search-query-input"
+                placeholder="Type to search across all columns…" autocomplete="off" spellcheck="false" />
               <button class="search-clear-x" id="search-clear-x" title="Clear">✕</button>
             </div>
-
-            <!-- Mode selector -->
             <div class="search-modes" id="searchModes">
               <button class="smode active" data-mode="contains">⊃ Contains</button>
               <button class="smode" data-mode="startsWith">⊢ Starts With</button>
@@ -140,7 +235,6 @@
             </div>
           </div>
 
-          <!-- Options row -->
           <div class="search-options-row">
             <label class="stoggle">
               <input type="checkbox" id="s-case" />
@@ -150,10 +244,8 @@
             <div class="search-col-chips" id="searchColChips"></div>
           </div>
 
-          <!-- Summary -->
           <div class="search-summary" id="searchSummary">Load a file and type a query to search.</div>
 
-          <!-- Results table -->
           <div class="table-wrapper" id="searchTableWrap" style="display:none;">
             <table id="search-results-table">
               <thead id="search-thead"></thead>
@@ -161,7 +253,6 @@
             </table>
           </div>
 
-          <!-- Pagination -->
           <div class="search-pagination" id="searchPagination"></div>
         </div>
       </div>

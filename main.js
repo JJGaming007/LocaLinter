@@ -7,6 +7,8 @@ window.addEventListener('DOMContentLoaded', () => {
   const missingBody = document.getElementById('missing-body');
   const statScanned = document.getElementById('stat-scanned');
   const statIssues = document.getElementById('stat-issues');
+  const statScannedContainer = document.getElementById('stat-scanned-container');
+  const statIssuesContainer = document.getElementById('stat-issues-container');
   const badgeFormat = document.getElementById('badge-format');
   const badgeMissing = document.getElementById('badge-missing');
   const tabBtns = document.querySelectorAll('.tab-btn');
@@ -89,15 +91,22 @@ window.addEventListener('DOMContentLoaded', () => {
     ignoreListInput.value = savedIgnoreList;
   }
 
+  // ── Toast helper ──
+  function showToast(message, type = 'success') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerHTML = `<span class="toast-dot"></span>${message}`;
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.classList.add('hide');
+      toast.addEventListener('animationend', () => toast.remove());
+    }, 2500);
+  }
+
   saveIgnoreBtn.addEventListener('click', () => {
     localStorage.setItem('localinter_ignore_list', ignoreListInput.value);
-    const successMsg = document.createElement('span');
-    successMsg.textContent = ' Saved!';
-    successMsg.style.color = 'var(--success)';
-    successMsg.style.marginLeft = '10px';
-    saveIgnoreBtn.parentNode.appendChild(successMsg);
-    setTimeout(() => successMsg.remove(), 2000);
-
+    showToast('Ignore list saved!');
     if (currentRows) {
       validateData(currentRows);
     }
@@ -426,14 +435,14 @@ window.addEventListener('DOMContentLoaded', () => {
     badgeMissing.textContent = missingIssues.length;
 
     if (totalIssues === 0) {
-      statIssues.className = 'stat-pill success';
+      statIssuesContainer.className = 'stat-pill success';
       statIssues.textContent = 'All Clear! No issues.';
       resultsBody.innerHTML = `<tr><td colspan="4" class="success-state"><h3>Everything looks perfect!</h3><p>No formatting errors were found in this sheet.</p></td></tr>`;
       missingBody.innerHTML = `<tr><td colspan="4" class="success-state"><h3>All localizations present!</h3><p>No missing translations found.</p></td></tr>`;
       return;
     }
 
-    statIssues.className = 'stat-pill danger';
+    statIssuesContainer.className = 'stat-pill danger';
     let issuesText = `Issues Found: ${totalIssues} (${totalFormat} Format, ${totalMissing} Missing)`;
     if (isFiltered) {
       issuesText += ` — Showing ${formatIssues.length + missingIssues.length} for ${langFilter.value}`;
