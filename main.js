@@ -3,6 +3,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const fileInput = document.getElementById('file-input');
   const browseBtn = document.getElementById('browse-btn');
   const resultsContainer = document.getElementById('results-container');
+  const resultsHeader = document.querySelector('.results-header');
   const resultsBody = document.getElementById('results-body');
   const missingBody = document.getElementById('missing-body');
   const statScanned = document.getElementById('stat-scanned');
@@ -23,19 +24,39 @@ window.addEventListener('DOMContentLoaded', () => {
   const langFilter = document.getElementById('lang-filter');
 
   // ── Search tab DOM refs ──
-  const searchQueryInput  = document.getElementById('search-query');
-  const searchClearX      = document.getElementById('search-clear-x');
-  const searchOptionsBtn  = document.getElementById('search-options-btn');
-  const searchOptionsPanel= document.getElementById('search-options-panel');
-  const searchModesEl     = document.getElementById('searchModes');
-  const sCaseChk          = document.getElementById('s-case');
-  const sWrapChk          = document.getElementById('s-wrap');
-  const searchColChips    = document.getElementById('searchColChips');
-  const searchSummary     = document.getElementById('searchSummary');
-  const searchTableWrap   = document.getElementById('searchTableWrap');
-  const searchThead       = document.getElementById('search-thead');
-  const searchTbody       = document.getElementById('search-tbody');
-  const searchPagination  = document.getElementById('searchPagination');
+  const searchQueryInput = document.getElementById('search-query');
+  const searchClearX = document.getElementById('search-clear-x');
+  const searchOptionsBtn = document.getElementById('search-options-btn');
+  const searchOptionsPanel = document.getElementById('search-options-panel');
+  const searchModesEl = document.getElementById('searchModes');
+  const sCaseChk = document.getElementById('s-case');
+  const sWrapChk = document.getElementById('s-wrap');
+  const searchColChips = document.getElementById('searchColChips');
+  const searchSummary = document.getElementById('searchSummary');
+  const searchTableWrap = document.getElementById('searchTableWrap');
+  const searchThead = document.getElementById('search-thead');
+  const searchTbody = document.getElementById('search-tbody');
+  const searchPagination = document.getElementById('searchPagination');
+  
+  const globalWrapChk = document.getElementById('global-wrap');
+  const formatTableWrap = document.getElementById('format-table-wrap');
+  const missingTableWrap = document.getElementById('missing-table-wrap');
+  const formatSummary = document.getElementById('format-summary');
+  const missingSummary = document.getElementById('missing-summary');
+  const validationInfoGroup = document.getElementById('validation-info-group');
+  const formatPagination = document.getElementById('format-pagination');
+  const missingPagination = document.getElementById('missing-pagination');
+  
+  const globalSettingsBtn = document.getElementById('global-settings-btn');
+  const settingsModal = document.getElementById('settings-modal');
+  const modalOverlay = document.getElementById('modal-overlay');
+  const modalClose = document.getElementById('modal-close');
+  
+  const container = document.querySelector('.container');
+  const formatSearchInput = document.getElementById('format-search');
+  const formatSearchClear = document.getElementById('format-search-clear');
+  const missingSearchInput = document.getElementById('missing-search');
+  const missingSearchClear = document.getElementById('missing-search-clear');
 
   // ── Search state ──
   const srch = {
@@ -52,6 +73,11 @@ window.addEventListener('DOMContentLoaded', () => {
   let allFormatIssues = [];
   let allMissingIssues = [];
   let currentScannedCount = 0;
+  
+  const scanResults = {
+    format: { page: 1, pageSize: 25, query: '' },
+    missing: { page: 1, pageSize: 25, query: '' }
+  };
 
   langFilter.addEventListener('change', () => {
     filterResults();
@@ -63,7 +89,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (copyBtn) {
       const input = copyBtn.previousElementSibling;
       const textToCopy = input ? input.value : copyBtn.dataset.translation;
-      
+
       navigator.clipboard.writeText(textToCopy).then(() => {
         copyBtn.classList.add('copied');
         setTimeout(() => copyBtn.classList.remove('copied'), 2000);
@@ -156,20 +182,48 @@ window.addEventListener('DOMContentLoaded', () => {
   saveIgnoreBtn.addEventListener('click', () => {
     localStorage.setItem('localinter_ignore_list', ignoreListInput.value);
     showToast('Ignore list saved!');
+    closeSettings();
     if (currentRows) {
       validateData(currentRows);
     }
+  });
+
+  function openSettings() {
+    settingsModal.classList.remove('hidden');
+    modalOverlay.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeSettings() {
+    settingsModal.classList.add('hidden');
+    modalOverlay.classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+
+  globalSettingsBtn.addEventListener('click', openSettings);
+  modalClose.addEventListener('click', closeSettings);
+  modalOverlay.addEventListener('click', closeSettings);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeSettings();
   });
 
   removeFileBtn.addEventListener('click', () => {
     clearDB();
     currentRows = null;
     currentFileName = "";
+    container.classList.remove('has-results');
     dropzone.classList.remove('file-loaded');
     dropContentIdle.classList.remove('hidden');
     loadedContent.classList.add('hidden');
     resultsContainer.classList.add('hidden');
     fileInput.value = '';
+    
+    // Clear tab searches
+    formatSearchInput.value = '';
+    scanResults.format.query = '';
+    missingSearchInput.value = '';
+    scanResults.missing.query = '';
   });
 
   function switchTab(tabId) {
@@ -180,6 +234,18 @@ window.addEventListener('DOMContentLoaded', () => {
     targetBtn.classList.add('active');
     const content = document.getElementById('tab-' + tabId);
     if (content) content.classList.add('active');
+
+    // UI Isolation for Search Tab
+    const isSearch = tabId === 'search';
+    if (globalSettingsBtn) {
+      if (isSearch) globalSettingsBtn.classList.add('v-hidden');
+      else globalSettingsBtn.classList.remove('v-hidden');
+    }
+    if (resultsHeader) {
+      if (isSearch) resultsHeader.classList.add('hidden');
+      else resultsHeader.classList.remove('hidden');
+    }
+
     localStorage.setItem('locaLinterActiveTab', tabId);
   }
 
@@ -187,6 +253,35 @@ window.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => {
       switchTab(btn.dataset.tab);
     });
+  });
+
+  // ── Tab Search Listeners ──
+  formatSearchInput.addEventListener('input', () => {
+    scanResults.format.query = formatSearchInput.value;
+    formatSearchClear.style.display = scanResults.format.query ? 'flex' : 'none';
+    filterResults();
+  });
+
+  formatSearchClear.addEventListener('click', () => {
+    formatSearchInput.value = '';
+    scanResults.format.query = '';
+    formatSearchClear.style.display = 'none';
+    filterResults();
+    formatSearchInput.focus();
+  });
+
+  missingSearchInput.addEventListener('input', () => {
+    scanResults.missing.query = missingSearchInput.value;
+    missingSearchClear.style.display = scanResults.missing.query ? 'flex' : 'none';
+    filterResults();
+  });
+
+  missingSearchClear.addEventListener('click', () => {
+    missingSearchInput.value = '';
+    scanResults.missing.query = '';
+    missingSearchClear.style.display = 'none';
+    filterResults();
+    missingSearchInput.focus();
   });
 
   browseBtn.addEventListener('click', (e) => {
@@ -475,48 +570,86 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function filterResults() {
     const selectedLang = langFilter.value;
-    const filteredFormat = selectedLang === 'all'
-      ? allFormatIssues
-      : allFormatIssues.filter(i => i.lang === selectedLang);
+    const fQuery = scanResults.format.query.toLowerCase();
+    const mQuery = scanResults.missing.query.toLowerCase();
 
-    const filteredMissing = selectedLang === 'all'
-      ? allMissingIssues
-      : allMissingIssues.filter(i => i.lang === selectedLang);
+    const filteredFormat = allFormatIssues.filter(i => {
+      const matchLang = selectedLang === 'all' || i.lang === selectedLang;
+      const matchQuery = !fQuery || i.key.toLowerCase().includes(fQuery) || i.err.toLowerCase().includes(fQuery) || i.snippet.toLowerCase().includes(fQuery);
+      return matchLang && matchQuery;
+    });
+
+    const filteredMissing = allMissingIssues.filter(i => {
+      const matchLang = selectedLang === 'all' || i.lang === selectedLang;
+      const matchQuery = !mQuery || i.key.toLowerCase().includes(mQuery) || i.englishText.toLowerCase().includes(mQuery);
+      return matchLang && matchQuery;
+    });
+
+    // Reset pagination on filter
+    scanResults.format.page = 1;
+    scanResults.missing.page = 1;
 
     renderResults(currentScannedCount, filteredFormat, filteredMissing, true);
   }
 
-  function renderResults(scannedCount, formatIssues, missingIssues, isFiltered = false) {
-    resultsContainer.classList.remove('hidden');
-    statScanned.textContent = `Rows Scanned: ${scannedCount}`;
-
-    const totalFormat = allFormatIssues.length;
-    const totalMissing = allMissingIssues.length;
-    const totalIssues = totalFormat + totalMissing;
-
-    badgeFormat.textContent = formatIssues.length;
-    badgeMissing.textContent = missingIssues.length;
-
-    if (totalIssues === 0) {
-      statIssuesContainer.className = 'stat-pill success';
-      statIssues.textContent = 'All Clear! No issues.';
-      resultsBody.innerHTML = `<tr><td colspan="4" class="success-state"><h3>Everything looks perfect!</h3><p>No formatting errors were found in this sheet.</p></td></tr>`;
-      missingBody.innerHTML = `<tr><td colspan="4" class="success-state"><h3>All localizations present!</h3><p>No missing translations found.</p></td></tr>`;
+  function renderPagination(container, currentPage, totalPages, totalItems, pageSize, onPageChange) {
+    container.innerHTML = '';
+    if (totalPages <= 1) {
+      container.style.display = 'none';
       return;
     }
+    container.style.display = 'flex';
 
-    statIssuesContainer.className = 'stat-pill danger';
-    let issuesText = `Issues Found: ${totalIssues} (${totalFormat} Format, ${totalMissing} Missing)`;
-    if (isFiltered) {
-      issuesText += ` — Showing ${formatIssues.length + missingIssues.length} for ${langFilter.value}`;
-    }
-    statIssues.textContent = issuesText;
+    const mk = (label, pg, disabled, active) => {
+      const b = document.createElement('button');
+      b.className = 'spg-btn' + (active ? ' active' : '');
+      b.textContent = label;
+      b.disabled = !!disabled;
+      b.addEventListener('click', () => onPageChange(pg));
+      return b;
+    };
+
+    container.appendChild(mk('‹', currentPage - 1, currentPage === 1));
+    const range = new Set([1, totalPages]);
+    for (let i = Math.max(2, currentPage - 2); i <= Math.min(totalPages - 1, currentPage + 2); i++) range.add(i);
+    let last = 0;
+    [...range].sort((a, b) => a - b).forEach(p => {
+      if (p - last > 1) {
+        const el = document.createElement('span');
+        el.className = 'spg-ellipsis';
+        el.textContent = '…';
+        container.appendChild(el);
+      }
+      container.appendChild(mk(p, p, false, p === currentPage));
+      last = p;
+    });
+    container.appendChild(mk('›', currentPage + 1, currentPage === totalPages));
+
+    const info = document.createElement('span');
+    info.className = 'spg-info';
+    info.textContent = `${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, totalItems)} of ${totalItems.toLocaleString()}`;
+    container.appendChild(info);
+  }
+
+  function renderFormatPage(issues, isFiltered) {
+    const total = issues.length;
+    const pageSize = scanResults.format.pageSize;
+    const totalPg = Math.max(1, Math.ceil(total / pageSize));
+    scanResults.format.page = Math.min(scanResults.format.page, totalPg);
+    const start = (scanResults.format.page - 1) * pageSize;
+    const pageIssues = issues.slice(start, start + pageSize);
+
+    const filters = [];
+    if (langFilter.value !== 'all') filters.push(`<strong>${escapeHtml(langFilter.value)}</strong>`);
+    if (scanResults.format.query) filters.push(`"<strong>${escapeHtml(scanResults.format.query)}</strong>"`);
+    
+    formatSummary.innerHTML = `Found <span class="srch-count">${total.toLocaleString()}</span> issue${total !== 1 ? 's' : ''}${filters.length ? ` for ${filters.join(' and ')}` : ''}`;
 
     resultsBody.innerHTML = '';
-    if (formatIssues.length === 0) {
-      resultsBody.innerHTML = `<tr><td colspan="4" class="success-state"><h3>No formatting issues!</h3>${isFiltered ? `<p>For selected language: ${langFilter.value}</p>` : ''}</td></tr>`;
+    if (total === 0) {
+      resultsBody.innerHTML = `<tr><td colspan="4" class="success-state"><h3>No formatting issues!</h3></td></tr>`;
     } else {
-      formatIssues.forEach(issue => {
+      pageIssues.forEach(issue => {
         const tr = document.createElement('tr');
         const rowSpan = issue.rowNum ? ` <span class="row-num" title="Excel Row Number">(Row ${issue.rowNum})</span>` : '';
         tr.innerHTML = `
@@ -529,11 +662,32 @@ window.addEventListener('DOMContentLoaded', () => {
       });
     }
 
+    renderPagination(formatPagination, scanResults.format.page, totalPg, total, pageSize, (pg) => {
+      scanResults.format.page = pg;
+      renderFormatPage(issues, isFiltered);
+      document.getElementById('format-table-wrap').scrollIntoView({ behavior: 'smooth' });
+    });
+  }
+
+  function renderMissingPage(issues, isFiltered) {
+    const total = issues.length;
+    const pageSize = scanResults.missing.pageSize;
+    const totalPg = Math.max(1, Math.ceil(total / pageSize));
+    scanResults.missing.page = Math.min(scanResults.missing.page, totalPg);
+    const start = (scanResults.missing.page - 1) * pageSize;
+    const pageIssues = issues.slice(start, start + pageSize);
+
+    const filters = [];
+    if (langFilter.value !== 'all') filters.push(`<strong>${escapeHtml(langFilter.value)}</strong>`);
+    if (scanResults.missing.query) filters.push(`"<strong>${escapeHtml(scanResults.missing.query)}</strong>"`);
+    
+    missingSummary.innerHTML = `Found <span class="srch-count">${total.toLocaleString()}</span> missing item${total !== 1 ? 's' : ''}${filters.length ? ` for ${filters.join(' and ')}` : ''}`;
+
     missingBody.innerHTML = '';
-    if (missingIssues.length === 0) {
-      missingBody.innerHTML = `<tr><td colspan="4" class="success-state"><h3>All localizations present!</h3>${isFiltered ? `<p>For selected language: ${langFilter.value}</p>` : ''}</td></tr>`;
+    if (total === 0) {
+      missingBody.innerHTML = `<tr><td colspan="4" class="success-state"><h3>All localizations present!</h3></td></tr>`;
     } else {
-      missingIssues.forEach(issue => {
+      pageIssues.forEach(issue => {
         const tr = document.createElement('tr');
         const langCode = getLangCodeForName(issue.lang);
         const rowSpan = issue.rowNum ? ` <span class="row-num" title="Excel Row Number">(Row ${issue.rowNum})</span>` : '';
@@ -551,6 +705,48 @@ window.addEventListener('DOMContentLoaded', () => {
         missingBody.appendChild(tr);
       });
     }
+
+    renderPagination(missingPagination, scanResults.missing.page, totalPg, total, pageSize, (pg) => {
+      scanResults.missing.page = pg;
+      renderMissingPage(issues, isFiltered);
+      document.getElementById('missing-table-wrap').scrollIntoView({ behavior: 'smooth' });
+    });
+  }
+
+  function renderResults(scannedCount, formatIssues, missingIssues, isFiltered = false) {
+    resultsContainer.classList.remove('hidden');
+    container.classList.add('has-results');
+    dropzone.classList.add('file-loaded');
+    statScanned.textContent = `Rows Scanned: ${scannedCount}`;
+
+    const totalFormat = allFormatIssues.length;
+    const totalMissing = allMissingIssues.length;
+    const totalIssues = totalFormat + totalMissing;
+
+    badgeFormat.textContent = allFormatIssues.length;
+    badgeMissing.textContent = allMissingIssues.length;
+
+    // If it's a fresh scan (not filtered), reset pages
+    if (!isFiltered) {
+      scanResults.format.page = 1;
+      scanResults.missing.page = 1;
+    }
+
+    renderFormatPage(formatIssues, isFiltered);
+    renderMissingPage(missingIssues, isFiltered);
+
+    if (totalIssues === 0) {
+      statIssuesContainer.className = 'stat-pill success';
+      statIssues.textContent = 'All Clear! No issues.';
+      return;
+    }
+
+    statIssuesContainer.className = 'stat-pill danger';
+    let issuesText = `Issues Found: ${totalIssues} (${totalFormat} Format, ${totalMissing} Missing)`;
+    if (isFiltered) {
+      issuesText += ` — Showing ${formatIssues.length + missingIssues.length} for ${langFilter.value}`;
+    }
+    statIssues.textContent = issuesText;
   }
 
   function getLangCodeForName(langName) {
@@ -632,8 +828,8 @@ window.addEventListener('DOMContentLoaded', () => {
       searchTableWrap.classList.remove('wrap-text');
     }
 
-    srch.rows    = buildFlatRows(rows, headers);
-    
+    srch.rows = buildFlatRows(rows, headers);
+
     // Restore search query
     const savedQuery = localStorage.getItem('locaLinterSearchQuery');
     if (savedQuery !== null && savedQuery !== undefined) {
@@ -655,7 +851,7 @@ window.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    srch.page    = 1;
+    srch.page = 1;
     buildColChips(headers);
     renderSearch();
   }
@@ -684,17 +880,17 @@ window.addEventListener('DOMContentLoaded', () => {
     actions.style.display = 'flex';
     actions.style.gap = '0.5rem';
     actions.style.marginBottom = '0.6rem';
-    
+
     const selectAll = document.createElement('button');
     selectAll.className = 'smode';
     selectAll.style.padding = '0.15rem 0.5rem';
     selectAll.textContent = 'Select All';
-    
+
     const clearAll = document.createElement('button');
     clearAll.className = 'smode';
     clearAll.style.padding = '0.15rem 0.5rem';
     clearAll.textContent = 'Clear All';
-    
+
     actions.appendChild(selectAll);
     actions.appendChild(clearAll);
     searchColChips.appendChild(actions);
@@ -719,18 +915,18 @@ window.addEventListener('DOMContentLoaded', () => {
     headers.forEach(col => {
       const label = document.createElement('label');
       label.className = 'col-checkbox';
-      
+
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.dataset.col = col;
       checkbox.checked = srch.cols.includes(col);
-      
+
       const text = document.createElement('span');
       text.textContent = col;
-      
+
       label.appendChild(checkbox);
       label.appendChild(text);
-      
+
       checkbox.addEventListener('change', () => {
         if (checkbox.checked) {
           srch.cols.push(col);
@@ -743,11 +939,11 @@ window.addEventListener('DOMContentLoaded', () => {
         }
         updateAll();
       });
-      
+
       checkboxes.push(checkbox);
       grid.appendChild(label);
     });
-    
+
     searchColChips.appendChild(grid);
   }
 
@@ -756,11 +952,11 @@ window.addEventListener('DOMContentLoaded', () => {
     const q = cs ? query : query.toLowerCase();
     const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     switch (mode) {
-      case 'exact':      return v => (cs ? v : v.toLowerCase()) === q;
+      case 'exact': return v => (cs ? v : v.toLowerCase()) === q;
       case 'startsWith': return v => (cs ? v : v.toLowerCase()).startsWith(q);
-      case 'endsWith':   return v => (cs ? v : v.toLowerCase()).endsWith(q);
-      case 'word': try { const wr = new RegExp(`\\b${esc(query)}\\b`, cs ? 'g' : 'gi'); return v => wr.test(v); } catch(_){ return ()=>false; }
-      case 'regex': try { const rr = new RegExp(query, cs ? 'g' : 'gi'); return v => rr.test(v); } catch(_){ return ()=>false; }
+      case 'endsWith': return v => (cs ? v : v.toLowerCase()).endsWith(q);
+      case 'word': try { const wr = new RegExp(`\\b${esc(query)}\\b`, cs ? 'g' : 'gi'); return v => wr.test(v); } catch (_) { return () => false; }
+      case 'regex': try { const rr = new RegExp(query, cs ? 'g' : 'gi'); return v => rr.test(v); } catch (_) { return () => false; }
       default: return v => (cs ? v : v.toLowerCase()).includes(q);
     }
   }
@@ -777,27 +973,27 @@ window.addEventListener('DOMContentLoaded', () => {
     const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     try {
       let pat;
-      if (mode === 'regex')      pat = query;
-      else if (mode === 'word')  pat = `\\b${esc(query)}\\b`;
+      if (mode === 'regex') pat = query;
+      else if (mode === 'word') pat = `\\b${esc(query)}\\b`;
       else if (mode === 'startsWith') pat = `^${esc(query)}`;
-      else if (mode === 'endsWith')   pat = `${esc(query)}$`;
-      else if (mode === 'exact')      pat = `^${esc(query)}$`;
-      else                            pat = esc(query);
+      else if (mode === 'endsWith') pat = `${esc(query)}$`;
+      else if (mode === 'exact') pat = `^${esc(query)}$`;
+      else pat = esc(query);
       const re = new RegExp(`(${pat})`, cs ? 'g' : 'gi');
       return text.split(re).map((p, i) =>
         i % 2 === 1 ? `<mark class="srch-hl">${escapeHtml(p)}</mark>` : escapeHtml(p)
       ).join('');
-    } catch(_) { return escapeHtml(text); }
+    } catch (_) { return escapeHtml(text); }
   }
 
   // ── Render search results ──
   function renderSearch() {
-    const query   = srch.query.trim();
+    const query = srch.query.trim();
     const matched = getSearchResults();
-    const total   = matched.length;
+    const total = matched.length;
     const totalPg = Math.max(1, Math.ceil(total / srch.pageSize));
-    srch.page     = Math.min(srch.page, totalPg);
-    const start   = (srch.page - 1) * srch.pageSize;
+    srch.page = Math.min(srch.page, totalPg);
+    const start = (srch.page - 1) * srch.pageSize;
     const pageRows = matched.slice(start, start + srch.pageSize);
 
     // Summary
@@ -857,36 +1053,13 @@ window.addEventListener('DOMContentLoaded', () => {
     searchTableWrap.style.display = '';
 
     // Pagination
-    renderSearchPagination(totalPg, total);
+    renderPagination(searchPagination, srch.page, totalPg, total, srch.pageSize, (pg) => {
+      srch.page = pg;
+      renderSearch();
+      document.getElementById('tab-search').scrollIntoView({ behavior: 'smooth' });
+    });
   }
 
-  function renderSearchPagination(totalPg, total) {
-    searchPagination.innerHTML = '';
-    if (totalPg <= 1) return;
-    const cur = srch.page;
-    const mk = (label, pg, disabled, active) => {
-      const b = document.createElement('button');
-      b.className = 'spg-btn' + (active ? ' active' : '');
-      b.textContent = label;
-      b.disabled = !!disabled;
-      b.addEventListener('click', () => { srch.page = pg; renderSearch(); document.getElementById('tab-search').scrollIntoView({ behavior: 'smooth' }); });
-      return b;
-    };
-    searchPagination.appendChild(mk('‹', cur - 1, cur === 1));
-    const range = new Set([1, totalPg]);
-    for (let i = Math.max(2, cur - 2); i <= Math.min(totalPg - 1, cur + 2); i++) range.add(i);
-    let last = 0;
-    [...range].sort((a,b) => a-b).forEach(p => {
-      if (p - last > 1) { const el = document.createElement('span'); el.className = 'spg-ellipsis'; el.textContent = '…'; searchPagination.appendChild(el); }
-      searchPagination.appendChild(mk(p, p, false, p === cur));
-      last = p;
-    });
-    searchPagination.appendChild(mk('›', cur + 1, cur === totalPg));
-    const info = document.createElement('span');
-    info.className = 'spg-info';
-    info.textContent = `${(cur-1)*srch.pageSize+1}–${Math.min(cur*srch.pageSize, total)} of ${total.toLocaleString()}`;
-    searchPagination.appendChild(info);
-  }
 
   // ── Search event listeners ──
   let srchDebounce;
@@ -902,7 +1075,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Escape') { searchQueryInput.value = ''; srch.query = ''; searchClearX.style.display = 'none'; srch.page = 1; renderSearch(); }
   });
   searchClearX.addEventListener('click', () => {
-    searchQueryInput.value = ''; srch.query = ''; 
+    searchQueryInput.value = ''; srch.query = '';
     localStorage.setItem('locaLinterSearchQuery', '');
     searchClearX.style.display = 'none'; srch.page = 1; renderSearch(); searchQueryInput.focus();
   });
@@ -927,27 +1100,38 @@ window.addEventListener('DOMContentLoaded', () => {
     srch.page = 1;
     renderSearch();
   });
-  sCaseChk.addEventListener('change', () => { 
-    srch.caseSensitive = sCaseChk.checked; 
+  sCaseChk.addEventListener('change', () => {
+    srch.caseSensitive = sCaseChk.checked;
     localStorage.setItem('locaLinterSearchCase', sCaseChk.checked);
-    srch.page = 1; 
-    renderSearch(); 
-  });
-  
-  sWrapChk.addEventListener('change', () => {
-    localStorage.setItem('locaLinterSearchWrap', sWrapChk.checked);
-    if (sWrapChk.checked) {
-      searchTableWrap.classList.add('wrap-text');
-    } else {
-      searchTableWrap.classList.remove('wrap-text');
-    }
+    srch.page = 1;
+    renderSearch();
   });
 
-  // Double-click a search result cell to copy
-  searchTbody.addEventListener('dblclick', e => {
-    const td = e.target.closest('td');
-    if (!td) return;
-    navigator.clipboard.writeText(td.textContent).catch(() => {});
+  function setWrap(enabled) {
+    if (globalWrapChk) globalWrapChk.checked = enabled;
+    if (sWrapChk) sWrapChk.checked = enabled;
+    [formatTableWrap, missingTableWrap, searchTableWrap].forEach(el => {
+      if (el) el.classList.toggle('wrap-text', enabled);
+    });
+    localStorage.setItem('locaLinterGlobalWrap', enabled);
+  }
+
+  if (globalWrapChk) globalWrapChk.addEventListener('change', () => setWrap(globalWrapChk.checked));
+  if (sWrapChk) sWrapChk.addEventListener('change', () => setWrap(sWrapChk.checked));
+
+  // Initialize wrap state from localStorage (default true if not set)
+  const savedWrap = localStorage.getItem('locaLinterGlobalWrap') !== 'false';
+  setWrap(savedWrap);
+
+  // Double-click to copy for all result tables
+  [resultsBody, missingBody, searchTbody].forEach(tbody => {
+    tbody.addEventListener('dblclick', e => {
+      const td = e.target.closest('td');
+      if (!td) return;
+      navigator.clipboard.writeText(td.textContent).then(() => {
+        showToast('Copied to clipboard!');
+      }).catch(() => { });
+    });
   });
 
   /* ============================================================
@@ -972,7 +1156,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     const selectedBox = document.createElement('div');
     selectedBox.className = 'cs-selected';
-    
+
     const dropdown = document.createElement('div');
     dropdown.className = 'cs-dropdown hidden';
 
@@ -985,7 +1169,7 @@ window.addEventListener('DOMContentLoaded', () => {
     list.className = 'cs-list';
 
     const options = Array.from(selectEl.options);
-    
+
     function renderList(filter = '') {
       list.innerHTML = '';
       const f = filter.toLowerCase();
@@ -994,7 +1178,7 @@ window.addEventListener('DOMContentLoaded', () => {
           const li = document.createElement('li');
           li.textContent = opt.text;
           li.dataset.value = opt.value;
-          if (opt.selected) {
+          if (opt.value === selectEl.value) {
             li.classList.add('active');
             selectedBox.textContent = opt.text;
           }
@@ -1020,6 +1204,12 @@ window.addEventListener('DOMContentLoaded', () => {
       if (isHidden) {
         dropdown.classList.remove('hidden');
         searchInput.focus();
+        
+        // Scroll active item into view
+        const activeItem = list.querySelector('.active');
+        if (activeItem) {
+          activeItem.scrollIntoView({ block: 'nearest' });
+        }
       }
     });
 
@@ -1043,8 +1233,21 @@ window.addEventListener('DOMContentLoaded', () => {
     selectEl.parentNode.insertBefore(wrapper, selectEl.nextSibling);
   }
 
+  // Restore QT languages from localStorage
+  const savedSource = localStorage.getItem('locaLinterQTSource');
+  const savedTarget = localStorage.getItem('locaLinterQTTarget');
+  if (savedSource) qtSourceLang.value = savedSource;
+  if (savedTarget) qtLang.value = savedTarget;
+
   makeSearchableSelect(qtSourceLang);
   makeSearchableSelect(qtLang);
+
+  qtSourceLang.addEventListener('change', () => {
+    localStorage.setItem('locaLinterQTSource', qtSourceLang.value);
+  });
+  qtLang.addEventListener('change', () => {
+    localStorage.setItem('locaLinterQTTarget', qtLang.value);
+  });
 
   qtToggle.addEventListener('click', () => {
     qtPanel.classList.toggle('hidden');
@@ -1071,7 +1274,7 @@ window.addEventListener('DOMContentLoaded', () => {
     qtOutput.value = 'Translating...';
 
     const translation = await fetchTranslation(text, sourceLang, targetLang);
-    
+
     qtOutput.value = translation.text;
     if (translation.detected && sourceLang === 'auto') {
       const detectedName = qtSourceLang.querySelector(`option[value="${translation.detected}"]`)?.textContent || translation.detected.toUpperCase();
@@ -1090,7 +1293,7 @@ window.addEventListener('DOMContentLoaded', () => {
     clearTimeout(translateDebounce);
     translateDebounce = setTimeout(triggerTranslation, 600);
   });
-  
+
   // Also translate automatically when language changes
   qtSourceLang.addEventListener('change', () => {
     if (qtInput.value.trim()) triggerTranslation();
