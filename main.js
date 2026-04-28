@@ -772,7 +772,10 @@ window.addEventListener('DOMContentLoaded', () => {
   async function fetchTranslation(text, sourceLang, targetLang) {
     if (!text.trim()) return { text: '', detected: '' };
     try {
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
+      const isHttp = location.protocol === 'http:' || location.protocol === 'https:';
+      const url = isHttp
+        ? `/api/translate?sl=${sourceLang}&tl=${targetLang}&q=${encodeURIComponent(text)}`
+        : `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
       const response = await fetch(url);
       const data = await response.json();
       const transText = data[0].map(x => x[0]).join('');
