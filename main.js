@@ -797,7 +797,13 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function initSearchTab(rows) {
     if (!rows || rows.length < 1) return;
-    const headers = rows[0].map((h, i) => (h != null && String(h).trim()) ? String(h).trim() : `Col ${i + 1}`);
+    let maxLen = 0;
+    for (const r of rows) if (Array.isArray(r) && r.length > maxLen) maxLen = r.length;
+    const headerRow = rows[0] || [];
+    const headers = Array.from({ length: maxLen }, (_, i) => {
+      const h = headerRow[i];
+      return (h != null && String(h).trim()) ? String(h).trim() : `Col ${i + 1}`;
+    });
     srch.allCols = headers;
 
     const savedColsStr = localStorage.getItem('locaLinterSearchCols');
