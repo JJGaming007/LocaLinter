@@ -771,11 +771,16 @@ window.addEventListener('DOMContentLoaded', () => {
 
   async function fetchTranslation(text, sourceLang, targetLang) {
     if (!text.trim()) return { text: '', detected: '' };
+    const leadMatch = text.match(/^\s*/);
+    const trailMatch = text.match(/\s*$/);
+    const lead = leadMatch ? leadMatch[0] : '';
+    const trail = trailMatch ? trailMatch[0] : '';
+    const trimmed = text.slice(lead.length, text.length - trail.length);
     try {
       const isHttp = location.protocol === 'http:' || location.protocol === 'https:';
       const url = isHttp
-        ? `/api/translate?sl=${sourceLang}&tl=${targetLang}&q=${encodeURIComponent(text)}`
-        : `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
+        ? `/api/translate?sl=${sourceLang}&tl=${targetLang}&q=${encodeURIComponent(trimmed)}`
+        : `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(trimmed)}`;
       const response = await fetch(url);
       const data = await response.json();
       const transText = data[0].map(x => x[0]).join('');
@@ -783,7 +788,7 @@ window.addEventListener('DOMContentLoaded', () => {
       if (sourceLang === 'auto' && data[2]) {
         detected = data[2]; // e.g. 'es'
       }
-      return { text: transText, detected };
+      return { text: lead + transText + trail, detected };
     } catch (e) {
       console.error('Translation failed:', e);
       return { text: 'Error fetching translation. Please try again.', detected: '' };
