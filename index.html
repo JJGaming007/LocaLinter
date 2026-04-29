@@ -12,7 +12,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <!-- Replace content with your Google OAuth Client ID (from Google Cloud Console) -->
+  <meta name="google-oauth-client-id" content="454916925795-s83bblcn67b69platl0q6m8avp2upfvm.apps.googleusercontent.com" />
   <script src="assets/xlsx.min.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="main.js" defer></script>
 </head>
 
@@ -37,9 +40,45 @@
           <p>Drop your .xlsx or .csv sheet to validate formatting, brackets, and variables.</p>
         </div>
       </div>
-      <button id="global-settings-btn" class="icon-btn" title="Global Settings">
+      <div class="header-actions">
+        <button id="global-settings-btn" class="icon-btn" title="Global Settings">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      </button>
+        </button>
+        <button id="header-signin-btn" class="btn btn-primary sm-btn hidden" type="button">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+            <polyline points="10 17 15 12 10 7" />
+            <line x1="15" y1="12" x2="3" y2="12" />
+          </svg>
+          Sign in
+        </button>
+        <div id="account-widget" class="account-widget hidden">
+          <button id="account-btn" class="account-btn" type="button" aria-haspopup="true" aria-expanded="false">
+            <img id="account-avatar" class="account-avatar" alt="" referrerpolicy="no-referrer" />
+            <span id="account-initials" class="account-initials hidden"></span>
+          </button>
+          <div id="account-menu" class="account-menu hidden" role="menu">
+            <div class="account-menu-header">
+              <img id="account-menu-avatar" class="account-menu-avatar" alt="" referrerpolicy="no-referrer" />
+              <span id="account-menu-initials" class="account-menu-initials hidden"></span>
+              <div class="account-menu-id">
+                <div id="account-menu-name" class="account-menu-name"></div>
+                <div id="account-menu-email" class="account-menu-email"></div>
+              </div>
+            </div>
+            <button id="account-signout-btn" class="account-menu-item" type="button">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              Sign out
+            </button>
+          </div>
+        </div>
+      </div>
     </header>
 
     <!-- ── Drop Zone ── -->
@@ -68,6 +107,37 @@
         <input type="file" id="file-input"
           accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
           style="display: none;" />
+
+        <span class="or-divider"><span>OR</span></span>
+
+        <div class="gsheet-row">
+          <input type="text" id="gsheet-url" class="gsheet-input"
+            placeholder="Paste Google Sheets URL (private sheets supported)" autocomplete="off" spellcheck="false" />
+          <button id="gsheet-load-btn" class="btn sm-btn" type="button">
+            <svg class="gsheet-icon-default" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            <svg class="gsheet-icon-loading hidden" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="2" x2="12" y2="6" />
+              <line x1="12" y1="18" x2="12" y2="22" />
+              <line x1="4.93" y1="4.93" x2="7.76" y2="7.76" />
+              <line x1="16.24" y1="16.24" x2="19.07" y2="19.07" />
+              <line x1="2" y1="12" x2="6" y2="12" />
+              <line x1="18" y1="12" x2="22" y2="12" />
+              <line x1="4.93" y1="19.07" x2="7.76" y2="16.24" />
+              <line x1="16.24" y1="7.76" x2="19.07" y2="4.93" />
+            </svg>
+            <span class="gsheet-load-label">Load Sheet</span>
+          </button>
+        </div>
+        <div class="gsheet-auth-row">
+          <span id="gsheet-auth-status" class="gsheet-auth-status">Sign in to access private sheets</span>
+          <button id="gsheet-signin-btn" class="btn-link" type="button">Sign in with Google</button>
+        </div>
       </div>
 
       <div id="loaded-content" class="drop-content hidden">
@@ -79,6 +149,15 @@
           </svg>
         </div>
         <p id="loaded-file-name" class="loaded-file-name"></p>
+        <button id="refresh-sheet-btn" class="icon-btn icon-btn-sm hidden" type="button" title="Refresh from Google">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10" />
+            <polyline points="1 20 1 14 7 14" />
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" />
+            <path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14" />
+          </svg>
+        </button>
         <button id="remove-file-btn" class="btn btn-danger sm-btn">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

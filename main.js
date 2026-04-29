@@ -115,12 +115,17 @@ window.addEventListener('DOMContentLoaded', () => {
 
     if (translation && !translation.startsWith('Error')) {
       const td = btn.closest('td');
+      const showSave = !!currentSheetRef;
       td.innerHTML = `
         <div style="display: flex; gap: 0.5rem; align-items: center;">
-          <input type="text" class="text-snippet" value="${escapeHtml(translation).replace(/"/g, '&quot;')}" style="background: rgba(63,185,80,0.1); border: 1px solid rgba(63,185,80,0.3); color: var(--success); width: 100%; padding: 0.2rem 0.5rem; outline: none; border-radius: 4px; font-family: var(--font);" />
+          <input type="text" class="text-snippet inline-translation-input" value="${escapeHtml(translation).replace(/"/g, '&quot;')}" style="background: rgba(63,185,80,0.1); border: 1px solid rgba(63,185,80,0.3); color: var(--success); width: 100%; padding: 0.2rem 0.5rem; outline: none; border-radius: 4px; font-family: var(--font);" />
           <button class="qt-copy-btn inline-copy-btn" title="Copy" style="position: static; flex-shrink: 0;">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           </button>
+          ${showSave ? `<button class="btn sm-btn inline-save-btn" title="Save to Google Sheet" style="flex-shrink: 0;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+            Save
+          </button>` : ''}
         </div>
       `;
     } else {
@@ -129,15 +134,63 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // Inline save-to-sheet handler
+  missingBody.addEventListener('click', async (e) => {
+    const saveBtn = e.target.closest('.inline-save-btn');
+    if (!saveBtn) return;
+    if (!currentSheetRef) {
+      showToast('No Google Sheet is loaded.', 'error');
+      return;
+    }
+    const tr = saveBtn.closest('tr');
+    const input = tr.querySelector('.inline-translation-input');
+    if (!input) return;
+    const value = input.value;
+    const rowNum = Number(tr.dataset.rowNum);
+    const colIndex = Number(tr.dataset.colIndex);
+    if (!rowNum || Number.isNaN(colIndex)) {
+      showToast('Cannot determine target cell.', 'error');
+      return;
+    }
+    const originalLabel = saveBtn.innerHTML;
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+    try {
+      await writeSheetCell({
+        spreadsheetId: currentSheetRef.spreadsheetId,
+        sheetTitle: currentSheetRef.sheetTitle,
+        rowNum,
+        colIndex,
+        value,
+      });
+      // Update local cache so re-validation reflects the change
+      if (currentRows && currentRows[rowNum - 1]) {
+        currentRows[rowNum - 1][colIndex] = value;
+        saveToDB(currentFileName, currentRows, currentSheetRef);
+      }
+      input.style.borderColor = 'var(--success)';
+      saveBtn.classList.add('saved');
+      saveBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        Saved
+      `;
+      showToast('Saved to Google Sheet.');
+    } catch (err) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = originalLabel;
+      showToast(err.message || 'Failed to save.', 'error');
+    }
+  });
+
   let currentRows = null;
   let currentFileName = "";
   const DB_NAME = 'LocaLinterDB';
   const STORE_NAME = 'cache';
 
-  function saveToDB(fileName, rows) {
+  function saveToDB(fileName, rows, sheetRef = null) {
     const request = indexedDB.open(DB_NAME, 1);
     request.onupgradeneeded = (e) => e.target.result.createObjectStore(STORE_NAME);
-    request.onsuccess = (e) => e.target.result.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put({ fileName, rows }, 'currentFile');
+    request.onsuccess = (e) => e.target.result.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put({ fileName, rows, sheetRef }, 'currentFile');
   }
 
   function loadFromDB(callback) {
@@ -212,6 +265,9 @@ window.addEventListener('DOMContentLoaded', () => {
     clearDB();
     currentRows = null;
     currentFileName = "";
+    currentSheetRef = null;
+    const refreshBtn = document.getElementById('refresh-sheet-btn');
+    if (refreshBtn) refreshBtn.classList.add('hidden');
     container.classList.remove('has-results');
     dropzone.classList.remove('file-loaded');
     dropContentIdle.classList.remove('hidden');
@@ -325,6 +381,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
       currentFileName = file.name;
       currentRows = json;
+      currentSheetRef = null;
+      const refreshBtn = document.getElementById('refresh-sheet-btn');
+      if (refreshBtn) refreshBtn.classList.add('hidden');
       saveToDB(currentFileName, currentRows);
 
       showLoadedState(currentFileName);
@@ -341,13 +400,413 @@ window.addEventListener('DOMContentLoaded', () => {
     loadedFileName.textContent = `Loaded: ${name}`;
   }
 
+  // ── Google Sheets loader (OAuth via Google Identity Services) ──
+  const gsheetUrlInput = document.getElementById('gsheet-url');
+  const gsheetLoadBtn = document.getElementById('gsheet-load-btn');
+  const gsheetSignInBtn = document.getElementById('gsheet-signin-btn');
+  const gsheetAuthStatus = document.getElementById('gsheet-auth-status');
+  const headerSignInBtn = document.getElementById('header-signin-btn');
+  const accountWidget = document.getElementById('account-widget');
+  const accountBtn = document.getElementById('account-btn');
+  const accountAvatar = document.getElementById('account-avatar');
+  const accountInitials = document.getElementById('account-initials');
+  const accountMenu = document.getElementById('account-menu');
+  const accountMenuAvatar = document.getElementById('account-menu-avatar');
+  const accountMenuInitials = document.getElementById('account-menu-initials');
+  const accountMenuName = document.getElementById('account-menu-name');
+  const accountMenuEmail = document.getElementById('account-menu-email');
+  const accountSignOutBtn = document.getElementById('account-signout-btn');
+  const SHEETS_SCOPE = 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/spreadsheets';
+  const TOKEN_STORAGE_KEY = 'localinter_gsheet_token_v3';
+  const USER_STORAGE_KEY = 'localinter_gsheet_user_v3';
+
+  function getOAuthClientId() {
+    const meta = document.querySelector('meta[name="google-oauth-client-id"]');
+    return meta ? (meta.getAttribute('content') || '').trim() : '';
+  }
+
+  function loadStoredToken() {
+    try {
+      const raw = sessionStorage.getItem(TOKEN_STORAGE_KEY);
+      if (!raw) return null;
+      const t = JSON.parse(raw);
+      if (!t.access_token || !t.expires_at || Date.now() >= t.expires_at) {
+        sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+        return null;
+      }
+      return t;
+    } catch { return null; }
+  }
+
+  function storeToken(tok) {
+    sessionStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tok));
+  }
+
+  function clearToken() {
+    sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+    sessionStorage.removeItem(USER_STORAGE_KEY);
+  }
+
+  function loadStoredUser() {
+    try {
+      const raw = sessionStorage.getItem(USER_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
+
+  function storeUser(user) {
+    sessionStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+  }
+
+  function getInitials(name, email) {
+    const src = (name || email || '?').trim();
+    const parts = src.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return src.slice(0, 2).toUpperCase();
+  }
+
+  function setAvatar(imgEl, initialsEl, user) {
+    const initials = getInitials(user.name, user.email);
+    initialsEl.textContent = initials;
+    if (user.picture) {
+      imgEl.src = user.picture;
+      imgEl.classList.remove('hidden');
+      initialsEl.classList.add('hidden');
+      imgEl.onerror = () => {
+        imgEl.classList.add('hidden');
+        initialsEl.classList.remove('hidden');
+      };
+    } else {
+      imgEl.classList.add('hidden');
+      initialsEl.classList.remove('hidden');
+    }
+  }
+
+  function updateAuthUI() {
+    const tok = loadStoredToken();
+    const user = loadStoredUser();
+    const authRow = document.querySelector('.gsheet-auth-row');
+    if (tok && user) {
+      if (authRow) authRow.classList.add('signed-in');
+      gsheetSignInBtn.classList.add('hidden');
+      headerSignInBtn.classList.add('hidden');
+      accountWidget.classList.remove('hidden');
+      setAvatar(accountAvatar, accountInitials, user);
+      setAvatar(accountMenuAvatar, accountMenuInitials, user);
+      accountMenuName.textContent = user.name || 'Google account';
+      accountMenuEmail.textContent = user.email || '';
+    } else {
+      if (authRow) authRow.classList.remove('signed-in');
+      gsheetAuthStatus.textContent = 'Sign in to access private sheets';
+      gsheetSignInBtn.classList.remove('hidden');
+      headerSignInBtn.classList.remove('hidden');
+      accountWidget.classList.add('hidden');
+      accountMenu.classList.add('hidden');
+      accountBtn.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  async function fetchUserInfo(accessToken) {
+    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) throw new Error('Failed to fetch user profile.');
+    const data = await res.json();
+    return { name: data.name, email: data.email, picture: data.picture };
+  }
+
+  function requestAccessToken({ silent = false } = {}) {
+    return new Promise((resolve, reject) => {
+      const clientId = getOAuthClientId();
+      if (!clientId) {
+        reject(new Error('Google OAuth Client ID is not configured. Set the meta tag in index.html.'));
+        return;
+      }
+      if (!window.google || !google.accounts || !google.accounts.oauth2) {
+        reject(new Error('Google Identity Services not loaded yet. Try again in a moment.'));
+        return;
+      }
+      const tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: SHEETS_SCOPE,
+        prompt: silent ? '' : 'consent',
+        callback: async (response) => {
+          if (response.error) {
+            reject(new Error(response.error_description || response.error));
+            return;
+          }
+          const tok = {
+            access_token: response.access_token,
+            expires_at: Date.now() + (Number(response.expires_in || 3600) - 60) * 1000,
+          };
+          storeToken(tok);
+          try {
+            const user = await fetchUserInfo(tok.access_token);
+            storeUser(user);
+          } catch { /* avatar/profile is optional */ }
+          updateAuthUI();
+          resolve(tok);
+        },
+        error_callback: (err) => reject(new Error(err && err.message ? err.message : 'Sign-in cancelled')),
+      });
+      tokenClient.requestAccessToken({ prompt: silent ? '' : 'consent' });
+    });
+  }
+
+  async function getValidToken() {
+    const cached = loadStoredToken();
+    if (cached) return cached;
+    return requestAccessToken({ silent: false });
+  }
+
+  function parseSheetUrl(url) {
+    if (!url) return null;
+    const idMatch = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (!idMatch) return null;
+    const gidMatch = url.match(/[#?&]gid=([0-9]+)/);
+    return { spreadsheetId: idMatch[1], gid: gidMatch ? Number(gidMatch[1]) : null };
+  }
+
+  function colIndexToA1(idx) {
+    let n = idx + 1, s = '';
+    while (n > 0) {
+      const r = (n - 1) % 26;
+      s = String.fromCharCode(65 + r) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
+  }
+
+  async function writeSheetCell({ spreadsheetId, sheetTitle, rowNum, colIndex, value }) {
+    const token = await getValidToken();
+    const a1 = `${sheetTitle}!${colIndexToA1(colIndex)}${rowNum}`;
+    const res = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(a1)}?valueInputOption=RAW`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ values: [[value]] }),
+      },
+    );
+    if (res.status === 401) {
+      clearToken();
+      updateAuthUI();
+      throw new Error('Session expired. Please sign in again.');
+    }
+    if (!res.ok) {
+      let msg = `Sheets write failed (${res.status})`;
+      try {
+        const err = await res.json();
+        if (err.error && err.error.message) msg = err.error.message;
+      } catch {}
+      throw new Error(msg);
+    }
+    return res.json();
+  }
+
+  async function sheetsApi(path, token) {
+    const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets${path}`, {
+      headers: { Authorization: `Bearer ${token.access_token}` },
+    });
+    if (res.status === 401) {
+      clearToken();
+      updateAuthUI();
+      throw new Error('Session expired. Please sign in again.');
+    }
+    if (!res.ok) {
+      let msg = `Sheets API error (${res.status})`;
+      try {
+        const err = await res.json();
+        if (err.error && err.error.message) msg = err.error.message;
+      } catch {}
+      throw new Error(msg);
+    }
+    return res.json();
+  }
+
+  const refreshSheetBtn = document.getElementById('refresh-sheet-btn');
+  let currentSheetRef = null; // { spreadsheetId, gid, sheetTitle }
+
+  async function fetchSheetRows({ spreadsheetId, gid, preferredTitle }) {
+    const token = await getValidToken();
+    let sheetTitle = preferredTitle;
+    let workbookTitle = '';
+    const meta = await sheetsApi(
+      `/${spreadsheetId}?fields=properties.title,sheets.properties(title,sheetId)`,
+      token,
+    );
+    workbookTitle = meta.properties.title;
+    let chosen = null;
+    if (preferredTitle) {
+      chosen = (meta.sheets || []).find(s => s.properties.title === preferredTitle);
+    }
+    if (!chosen && gid != null) {
+      chosen = (meta.sheets || []).find(s => s.properties.sheetId === gid);
+    }
+    if (!chosen) chosen = (meta.sheets || [])[0];
+    if (!chosen) throw new Error('Spreadsheet has no sheets.');
+    sheetTitle = chosen.properties.title;
+    const data = await sheetsApi(
+      `/${spreadsheetId}/values/${encodeURIComponent(sheetTitle)}`,
+      token,
+    );
+    return { rows: data.values || [], sheetTitle, workbookTitle, sheetId: chosen.properties.sheetId };
+  }
+
+  function setLoadBtnLoading(isLoading) {
+    const def = gsheetLoadBtn.querySelector('.gsheet-icon-default');
+    const ld = gsheetLoadBtn.querySelector('.gsheet-icon-loading');
+    const label = gsheetLoadBtn.querySelector('.gsheet-load-label');
+    if (isLoading) {
+      gsheetLoadBtn.classList.add('is-loading');
+      gsheetLoadBtn.disabled = true;
+      def && def.classList.add('hidden');
+      ld && ld.classList.remove('hidden');
+      if (label) label.textContent = 'Loading…';
+    } else {
+      gsheetLoadBtn.classList.remove('is-loading');
+      gsheetLoadBtn.disabled = false;
+      def && def.classList.remove('hidden');
+      ld && ld.classList.add('hidden');
+      if (label) label.textContent = 'Load Sheet';
+    }
+  }
+
+  async function loadFromSheetUrl(rawUrl) {
+    const parsed = parseSheetUrl(rawUrl);
+    if (!parsed) {
+      showToast('Invalid Google Sheets URL.', 'error');
+      return;
+    }
+    try {
+      setLoadBtnLoading(true);
+      showToast('Fetching sheet from Google…');
+      const { rows, sheetTitle, workbookTitle, sheetId } = await fetchSheetRows({
+        spreadsheetId: parsed.spreadsheetId,
+        gid: parsed.gid,
+      });
+      if (!rows.length) {
+        showToast('Sheet is empty.', 'error');
+        return;
+      }
+      currentFileName = `${workbookTitle} — ${sheetTitle}`;
+      currentRows = rows;
+      currentSheetRef = { spreadsheetId: parsed.spreadsheetId, gid: sheetId, sheetTitle };
+      saveToDB(currentFileName, currentRows, currentSheetRef);
+      showLoadedState(currentFileName);
+      validateData(currentRows);
+      initSearchTab(currentRows);
+      refreshSheetBtn.classList.remove('hidden');
+      showToast('Sheet loaded.');
+    } catch (e) {
+      showToast(e.message || 'Failed to load sheet.', 'error');
+    } finally {
+      setLoadBtnLoading(false);
+    }
+  }
+
+  async function refreshCurrentSheet() {
+    if (!currentSheetRef) return;
+    try {
+      refreshSheetBtn.disabled = true;
+      refreshSheetBtn.classList.add('is-loading');
+      const { rows, sheetTitle, workbookTitle, sheetId } = await fetchSheetRows({
+        spreadsheetId: currentSheetRef.spreadsheetId,
+        gid: currentSheetRef.gid,
+        preferredTitle: currentSheetRef.sheetTitle,
+      });
+      if (!rows.length) {
+        showToast('Sheet is empty.', 'error');
+        return;
+      }
+      currentFileName = `${workbookTitle} — ${sheetTitle}`;
+      currentRows = rows;
+      currentSheetRef = { spreadsheetId: currentSheetRef.spreadsheetId, gid: sheetId, sheetTitle };
+      saveToDB(currentFileName, currentRows, currentSheetRef);
+      loadedFileName.textContent = `Loaded: ${currentFileName}`;
+      validateData(currentRows);
+      initSearchTab(currentRows);
+      showToast('Sheet refreshed.');
+    } catch (e) {
+      showToast(e.message || 'Failed to refresh.', 'error');
+    } finally {
+      refreshSheetBtn.disabled = false;
+      refreshSheetBtn.classList.remove('is-loading');
+    }
+  }
+
+  refreshSheetBtn.addEventListener('click', refreshCurrentSheet);
+
+  gsheetLoadBtn.addEventListener('click', () => loadFromSheetUrl(gsheetUrlInput.value.trim()));
+  gsheetUrlInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      loadFromSheetUrl(gsheetUrlInput.value.trim());
+    }
+  });
+  async function doSignIn() {
+    try { await requestAccessToken({ silent: false }); showToast('Signed in to Google.'); }
+    catch (e) { showToast(e.message || 'Sign-in failed.', 'error'); }
+  }
+  function doSignOut() {
+    const tok = loadStoredToken();
+    if (tok && window.google && google.accounts && google.accounts.oauth2) {
+      try { google.accounts.oauth2.revoke(tok.access_token, () => {}); } catch {}
+    }
+    clearToken();
+    updateAuthUI();
+    showToast('Signed out.');
+  }
+
+  gsheetSignInBtn.addEventListener('click', doSignIn);
+  headerSignInBtn.addEventListener('click', doSignIn);
+  accountSignOutBtn.addEventListener('click', () => {
+    accountMenu.classList.add('hidden');
+    accountBtn.setAttribute('aria-expanded', 'false');
+    doSignOut();
+  });
+  accountBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isHidden = accountMenu.classList.toggle('hidden');
+    accountBtn.setAttribute('aria-expanded', String(!isHidden));
+  });
+  document.addEventListener('click', (e) => {
+    if (!accountMenu.classList.contains('hidden') && !accountWidget.contains(e.target)) {
+      accountMenu.classList.add('hidden');
+      accountBtn.setAttribute('aria-expanded', 'false');
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !accountMenu.classList.contains('hidden')) {
+      accountMenu.classList.add('hidden');
+      accountBtn.setAttribute('aria-expanded', 'false');
+    }
+  });
+  updateAuthUI();
+
   // Initial load check
   loadFromDB((data) => {
     currentFileName = data.fileName;
     currentRows = data.rows;
+    currentSheetRef = data.sheetRef || null;
     showLoadedState(currentFileName);
-    validateData(currentRows);
-    initSearchTab(currentRows);
+
+    const willAutoRefresh = currentSheetRef && loadStoredToken();
+    if (!willAutoRefresh) {
+      validateData(currentRows);
+      initSearchTab(currentRows);
+    }
+    if (currentSheetRef) {
+      refreshSheetBtn.classList.remove('hidden');
+      if (willAutoRefresh) {
+        // Yield two frames so the spinner animation kicks off on the
+        // compositor before validateData blocks the main thread.
+        requestAnimationFrame(() => requestAnimationFrame(() => refreshCurrentSheet()));
+      }
+    }
 
     // Restore active tab after data is ready
     const savedTab = localStorage.getItem('locaLinterActiveTab');
@@ -474,6 +933,7 @@ window.addEventListener('DOMContentLoaded', () => {
             missingIssues.push({
               key: keyInfo,
               rowNum: rowIndex + 1,
+              colIndex: col,
               lang: headers[col] || `Col ${col}`,
               englishText: englishText
             });
@@ -691,6 +1151,8 @@ window.addEventListener('DOMContentLoaded', () => {
         const tr = document.createElement('tr');
         const langCode = getLangCodeForName(issue.lang);
         const rowSpan = issue.rowNum ? ` <span class="row-num" title="Excel Row Number">(Row ${issue.rowNum})</span>` : '';
+        tr.dataset.rowNum = issue.rowNum;
+        tr.dataset.colIndex = issue.colIndex != null ? issue.colIndex : '';
         tr.innerHTML = `
           <td><strong>${escapeHtml(issue.key)}</strong>${rowSpan}</td>
           <td>${escapeHtml(issue.lang)}</td>
@@ -877,6 +1339,7 @@ window.addEventListener('DOMContentLoaded', () => {
       if (!r || r.every(c => c == null || String(c).trim() === '')) continue;
       const obj = {};
       headers.forEach((h, idx) => { obj[h] = r[idx] != null ? String(r[idx]) : ''; });
+      obj.__rowNum = i + 1;
       flat.push(obj);
     }
     return flat;
@@ -1050,8 +1513,10 @@ window.addEventListener('DOMContentLoaded', () => {
       tr.innerHTML = `<td colspan="${displayCols.length}" class="success-state"><h3>No matches found</h3><p>Try a different mode or query.</p></td>`;
       searchTbody.appendChild(tr);
     } else {
+      const editable = !!currentSheetRef;
       pageRows.forEach(row => {
         const tr = document.createElement('tr');
+        if (row.__rowNum) tr.dataset.rowNum = row.__rowNum;
         displayCols.forEach(col => {
           const td = document.createElement('td');
           const val = row[col] ?? '';
@@ -1059,6 +1524,16 @@ window.addEventListener('DOMContentLoaded', () => {
             ? hlMatch(val, query, srch.mode, srch.caseSensitive)
             : escapeHtml(val);
           td.title = val;
+          if (editable) {
+            const colIdx = srch.allCols.indexOf(col);
+            if (colIdx >= 0) {
+              td.contentEditable = 'true';
+              td.spellcheck = false;
+              td.classList.add('editable-cell');
+              td.dataset.colIndex = colIdx;
+              td.dataset.original = val;
+            }
+          }
           tr.appendChild(td);
         });
         searchTbody.appendChild(tr);
@@ -1121,6 +1596,109 @@ window.addEventListener('DOMContentLoaded', () => {
     renderSearch();
   });
 
+  // ── Inline edit on Search tab cells ──
+  const editUndoStack = []; // { rowNum, colIndex, prev, next }
+
+  async function pushSheetEdit({ rowNum, colIndex, value, prev }) {
+    await writeSheetCell({
+      spreadsheetId: currentSheetRef.spreadsheetId,
+      sheetTitle: currentSheetRef.sheetTitle,
+      rowNum,
+      colIndex,
+      value,
+    });
+    if (currentRows && currentRows[rowNum - 1]) {
+      currentRows[rowNum - 1][colIndex] = value;
+      saveToDB(currentFileName, currentRows, currentSheetRef);
+    }
+    editUndoStack.push({ rowNum, colIndex, prev, next: value });
+    if (editUndoStack.length > 50) editUndoStack.shift();
+  }
+
+  async function commitSearchCellEdit(td) {
+    if (!currentSheetRef) return false;
+    const tr = td.closest('tr');
+    const rowNum = Number(tr && tr.dataset.rowNum);
+    const colIndex = Number(td.dataset.colIndex);
+    const original = td.dataset.original ?? '';
+    const newValue = td.innerText.replace(/ /g, ' ');
+    if (!rowNum || Number.isNaN(colIndex)) return false;
+    if (newValue === original) return false;
+    td.classList.add('saving');
+    try {
+      await pushSheetEdit({ rowNum, colIndex, value: newValue, prev: original });
+      td.dataset.original = newValue;
+      td.title = newValue;
+      td.classList.remove('saving');
+      td.classList.add('saved');
+      setTimeout(() => td.classList.remove('saved'), 1200);
+      showToast('Saved. Press Ctrl+Z to undo.');
+      return true;
+    } catch (err) {
+      td.classList.remove('saving');
+      td.classList.add('save-error');
+      setTimeout(() => td.classList.remove('save-error'), 2000);
+      td.innerText = original;
+      showToast(err.message || 'Failed to save.', 'error');
+      return false;
+    }
+  }
+
+  searchTbody.addEventListener('keydown', async (e) => {
+    const td = e.target.closest('td.editable-cell');
+    if (!td) return;
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      const saved = await commitSearchCellEdit(td);
+      if (saved) {
+        td.dataset.skipRevert = '1';
+        td.blur();
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      td.innerText = td.dataset.original ?? '';
+      td.dataset.skipRevert = '1';
+      td.blur();
+    }
+  });
+  // On blur (without Enter), silently revert — never save by mistake.
+  searchTbody.addEventListener('focusout', (e) => {
+    const td = e.target.closest && e.target.closest('td.editable-cell');
+    if (!td) return;
+    if (td.dataset.skipRevert === '1') { delete td.dataset.skipRevert; return; }
+    const original = td.dataset.original ?? '';
+    if (td.innerText !== original) td.innerText = original;
+  });
+
+  // Global undo for sheet edits (Ctrl/Cmd + Z when not focused inside an editable element)
+  document.addEventListener('keydown', async (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.shiftKey) return;
+    if (e.key !== 'z' && e.key !== 'Z') return;
+    const t = e.target;
+    if (t && t.matches && (t.matches('input, textarea') || t.isContentEditable)) return;
+    if (!editUndoStack.length || !currentSheetRef) return;
+    e.preventDefault();
+    const last = editUndoStack.pop();
+    try {
+      await writeSheetCell({
+        spreadsheetId: currentSheetRef.spreadsheetId,
+        sheetTitle: currentSheetRef.sheetTitle,
+        rowNum: last.rowNum,
+        colIndex: last.colIndex,
+        value: last.prev,
+      });
+      if (currentRows && currentRows[last.rowNum - 1]) {
+        currentRows[last.rowNum - 1][last.colIndex] = last.prev;
+        saveToDB(currentFileName, currentRows, currentSheetRef);
+      }
+      renderSearch();
+      showToast('Edit undone.');
+    } catch (err) {
+      editUndoStack.push(last); // restore on failure
+      showToast(err.message || 'Undo failed.', 'error');
+    }
+  });
+
   function setWrap(enabled) {
     if (globalWrapChk) globalWrapChk.checked = enabled;
     if (sWrapChk) sWrapChk.checked = enabled;
@@ -1142,6 +1720,7 @@ window.addEventListener('DOMContentLoaded', () => {
     tbody.addEventListener('dblclick', e => {
       const td = e.target.closest('td');
       if (!td) return;
+      if (td.classList.contains('editable-cell')) return; // dblclick selects word for editing
       navigator.clipboard.writeText(td.textContent).then(() => {
         showToast('Copied to clipboard!');
       }).catch(() => { });
