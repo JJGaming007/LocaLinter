@@ -777,6 +777,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // ── Linked-sheet edit propagation ──
   const linkedSheetCache = new Map(); // spreadsheetId -> { sheetTitle, headerRow, keyToRowNum }
+  const linkedSheetDenied = new Set(); // spreadsheetIds we've confirmed are inaccessible (403/404)
   const linkSyncToggle = document.getElementById('link-sync-toggle');
   const linkSyncWrap = document.getElementById('link-sync-wrap');
   const linkSyncCurrent = document.getElementById('link-sync-current');
@@ -792,6 +793,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (linkSyncRefreshBtn) {
     linkSyncRefreshBtn.addEventListener('click', () => {
       linkedSheetCache.clear();
+      linkedSheetDenied.clear();
       showToast('Linked sheets cache cleared.');
     });
   }
@@ -870,6 +872,10 @@ window.addEventListener('DOMContentLoaded', () => {
     const targets = Object.entries(SHEET_PRESETS).filter(([k]) => k !== presetKey);
     const results = [];
     for (const [, target] of targets) {
+      if (linkedSheetDenied.has(target.id)) {
+        results.push(`${target.label}: no access (skipped)`);
+        continue;
+      }
       try {
         const data = await getLinkedSheetData(target.id);
         const targetRows = data.keyToRowNums.get(normalizeKey(key));
@@ -888,7 +894,13 @@ window.addEventListener('DOMContentLoaded', () => {
         const suffix = targetRows.length > 1 ? ` (${targetRows.length} rows)` : '';
         results.push(`${target.label} ✓${suffix}`);
       } catch (e) {
-        results.push(`${target.label}: ${(e && e.message) || 'error'}`);
+        const msg = (e && e.message) || 'error';
+        if (/permission|403|not found|404/i.test(msg)) {
+          linkedSheetDenied.add(target.id);
+          results.push(`${target.label}: no access — won't retry this session`);
+        } else {
+          results.push(`${target.label}: ${msg}`);
+        }
       }
     }
     if (results.length) {
