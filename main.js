@@ -268,6 +268,8 @@ window.addEventListener('DOMContentLoaded', () => {
     currentSheetRef = null;
     const refreshBtn = document.getElementById('refresh-sheet-btn');
     if (refreshBtn) refreshBtn.classList.add('hidden');
+    const linkWrap = document.getElementById('link-sync-wrap');
+    if (linkWrap) linkWrap.classList.add('hidden');
     container.classList.remove('has-results');
     dropzone.classList.remove('file-loaded');
     dropContentIdle.classList.remove('hidden');
@@ -398,6 +400,7 @@ window.addEventListener('DOMContentLoaded', () => {
     dropContentIdle.classList.add('hidden');
     loadedContent.classList.remove('hidden');
     loadedFileName.textContent = `Loaded: ${name}`;
+    if (typeof updateLinkSyncUI === 'function') updateLinkSyncUI();
   }
 
   // ── Google Sheets loader (OAuth via Google Identity Services) ──
@@ -700,6 +703,7 @@ window.addEventListener('DOMContentLoaded', () => {
       validateData(currentRows);
       initSearchTab(currentRows);
       refreshSheetBtn.classList.remove('hidden');
+      updateLinkSyncUI();
       showToast('Sheet loaded.');
     } catch (e) {
       showToast(e.message || 'Failed to load sheet.', 'error');
@@ -729,6 +733,8 @@ window.addEventListener('DOMContentLoaded', () => {
       loadedFileName.textContent = `Loaded: ${currentFileName}`;
       validateData(currentRows);
       initSearchTab(currentRows);
+      linkedSheetCache.delete(currentSheetRef.spreadsheetId);
+      updateLinkSyncUI();
       showToast('Sheet refreshed.');
     } catch (e) {
       showToast(e.message || 'Failed to refresh.', 'error');
@@ -747,6 +753,150 @@ window.addEventListener('DOMContentLoaded', () => {
       loadFromSheetUrl(gsheetUrlInput.value.trim());
     }
   });
+
+  // ── Sheet presets (Dev / Staging / Global Prod) ──
+  const SHEET_PRESETS = {
+    dev:     { id: '1yyDiN-QlqXXNzFKVSA1NOINMBQyEex-0VYcnRwzZKzY', label: 'Dev' },
+    staging: { id: '17lZ5oMqMuCxX6dig--YvsmAM-MuP3w_nBtDgu3_z45A', label: 'Staging' },
+    prod:    { id: '1ucDqgNFb74WZCYbTVQSoUW2cTfBDZodR5ypSfC-fBBQ', label: 'Global Prod' },
+  };
+
+  function presetKeyForSpreadsheetId(id) {
+    if (!id) return null;
+    const found = Object.entries(SHEET_PRESETS).find(([, p]) => p.id === id);
+    return found ? found[0] : null;
+  }
+
+  document.querySelectorAll('.quick-open-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const preset = SHEET_PRESETS[btn.dataset.preset];
+      if (!preset) return;
+      loadFromSheetUrl(`https://docs.google.com/spreadsheets/d/${preset.id}/edit?gid=0#gid=0`);
+    });
+  });
+
+  // ── Linked-sheet edit propagation ──
+  const linkedSheetCache = new Map(); // spreadsheetId -> { sheetTitle, headerRow, keyToRowNum }
+  const linkSyncToggle = document.getElementById('link-sync-toggle');
+  const linkSyncWrap = document.getElementById('link-sync-wrap');
+  const linkSyncCurrent = document.getElementById('link-sync-current');
+  const linkSyncRefreshBtn = document.getElementById('link-sync-refresh-btn');
+
+  if (linkSyncToggle) {
+    linkSyncToggle.checked = localStorage.getItem('locaLinterLinkSync') === '1';
+    linkSyncToggle.addEventListener('change', () => {
+      localStorage.setItem('locaLinterLinkSync', linkSyncToggle.checked ? '1' : '0');
+      if (linkSyncToggle.checked) linkedSheetCache.clear();
+    });
+  }
+  if (linkSyncRefreshBtn) {
+    linkSyncRefreshBtn.addEventListener('click', () => {
+      linkedSheetCache.clear();
+      showToast('Linked sheets cache cleared.');
+    });
+  }
+
+  function linkSyncEnabled() {
+    return !!(linkSyncToggle && linkSyncToggle.checked);
+  }
+
+  function updateLinkSyncUI() {
+    if (!linkSyncWrap) return;
+    const presetKey = currentSheetRef && presetKeyForSpreadsheetId(currentSheetRef.spreadsheetId);
+    if (presetKey) {
+      linkSyncWrap.classList.remove('hidden');
+      const others = Object.entries(SHEET_PRESETS)
+        .filter(([k]) => k !== presetKey)
+        .map(([, p]) => p.label)
+        .join(' & ');
+      if (linkSyncCurrent) {
+        linkSyncCurrent.textContent = `Current: ${SHEET_PRESETS[presetKey].label} → mirrors to ${others}`;
+      }
+    } else {
+      linkSyncWrap.classList.add('hidden');
+    }
+  }
+
+  function normalizeKey(s) {
+    return ((s || '') + '').trim().toLowerCase();
+  }
+  function normalizeHeader(s) {
+    return ((s || '') + '').trim().replace(/^\$+/, '').toLowerCase();
+  }
+
+  async function getLinkedSheetData(spreadsheetId) {
+    if (linkedSheetCache.has(spreadsheetId)) return linkedSheetCache.get(spreadsheetId);
+    const { rows, sheetTitle } = await fetchSheetRows({ spreadsheetId, gid: 0 });
+    const headerRow = rows[0] || [];
+    const keyToRowNums = new Map(); // key -> [rowNum, ...]
+    for (let i = 1; i < rows.length; i++) {
+      const k = normalizeKey(rows[i] && rows[i][0]);
+      if (!k) continue;
+      const list = keyToRowNums.get(k);
+      if (list) list.push(i + 1);
+      else keyToRowNums.set(k, [i + 1]);
+    }
+    const data = { sheetTitle, headerRow, keyToRowNums };
+    linkedSheetCache.set(spreadsheetId, data);
+    return data;
+  }
+
+  function findHeaderColIndex(headerRow, target) {
+    const t = normalizeHeader(target);
+    if (!t) return -1;
+    for (let i = 0; i < headerRow.length; i++) {
+      if (normalizeHeader(headerRow[i]) === t) return i;
+    }
+    return -1;
+  }
+
+  async function propagateEditToLinkedSheets({ rowNum, colIndex, value, sourceKey }) {
+    if (!linkSyncEnabled() || !currentSheetRef) return;
+    const presetKey = presetKeyForSpreadsheetId(currentSheetRef.spreadsheetId);
+    if (!presetKey) return;
+    if (!currentRows || !currentRows[rowNum - 1] || !currentRows[0]) return;
+    if (colIndex === 0) {
+      showToast('Linked sync skipped — editing the key column is not propagated.', 'error');
+      return;
+    }
+
+    const key = sourceKey != null
+      ? ((sourceKey + '').trim())
+      : ((currentRows[rowNum - 1][0] || '') + '').trim();
+    const langHeader = ((currentRows[0][colIndex] || '') + '').trim();
+    if (!key) { showToast('Linked sync skipped — row has no key.', 'error'); return; }
+    if (!langHeader) { showToast('Linked sync skipped — column has no header.', 'error'); return; }
+
+    const targets = Object.entries(SHEET_PRESETS).filter(([k]) => k !== presetKey);
+    const results = [];
+    for (const [, target] of targets) {
+      try {
+        const data = await getLinkedSheetData(target.id);
+        const targetRows = data.keyToRowNums.get(normalizeKey(key));
+        const targetCol = findHeaderColIndex(data.headerRow, langHeader);
+        if (!targetRows || !targetRows.length) { results.push(`${target.label}: key not found`); continue; }
+        if (targetCol < 0) { results.push(`${target.label}: language not found`); continue; }
+        for (const rn of targetRows) {
+          await writeSheetCell({
+            spreadsheetId: target.id,
+            sheetTitle: data.sheetTitle,
+            rowNum: rn,
+            colIndex: targetCol,
+            value,
+          });
+        }
+        const suffix = targetRows.length > 1 ? ` (${targetRows.length} rows)` : '';
+        results.push(`${target.label} ✓${suffix}`);
+      } catch (e) {
+        results.push(`${target.label}: ${(e && e.message) || 'error'}`);
+      }
+    }
+    if (results.length) {
+      const ok = results.every(r => r.includes('✓'));
+      showToast('Linked sync — ' + results.join(', '), ok ? undefined : 'error');
+    }
+  }
+
   async function doSignIn() {
     try { await requestAccessToken({ silent: false }); showToast('Signed in to Google.'); }
     catch (e) { showToast(e.message || 'Sign-in failed.', 'error'); }
@@ -1600,6 +1750,9 @@ window.addEventListener('DOMContentLoaded', () => {
   const editUndoStack = []; // { rowNum, colIndex, prev, next }
 
   async function pushSheetEdit({ rowNum, colIndex, value, prev }) {
+    const sourceKey = currentRows && currentRows[rowNum - 1]
+      ? ((currentRows[rowNum - 1][0] || '') + '')
+      : '';
     await writeSheetCell({
       spreadsheetId: currentSheetRef.spreadsheetId,
       sheetTitle: currentSheetRef.sheetTitle,
@@ -1611,8 +1764,9 @@ window.addEventListener('DOMContentLoaded', () => {
       currentRows[rowNum - 1][colIndex] = value;
       saveToDB(currentFileName, currentRows, currentSheetRef);
     }
-    editUndoStack.push({ rowNum, colIndex, prev, next: value });
+    editUndoStack.push({ rowNum, colIndex, prev, next: value, sourceKey });
     if (editUndoStack.length > 50) editUndoStack.shift();
+    propagateEditToLinkedSheets({ rowNum, colIndex, value, sourceKey }).catch(() => {});
   }
 
   async function commitSearchCellEdit(td) {
@@ -1693,6 +1847,12 @@ window.addEventListener('DOMContentLoaded', () => {
       }
       renderSearch();
       showToast('Edit undone.');
+      propagateEditToLinkedSheets({
+        rowNum: last.rowNum,
+        colIndex: last.colIndex,
+        value: last.prev,
+        sourceKey: last.sourceKey,
+      }).catch(() => {});
     } catch (err) {
       editUndoStack.push(last); // restore on failure
       showToast(err.message || 'Undo failed.', 'error');

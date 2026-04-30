@@ -110,6 +110,19 @@
 
         <span class="or-divider"><span>OR</span></span>
 
+        <div class="quick-open-row">
+          <span class="quick-open-label">Quick Open Sheet:</span>
+          <button class="btn sm-btn quick-open-btn" type="button" data-preset="dev">
+            <span class="env-dot env-dev"></span>Dev
+          </button>
+          <button class="btn sm-btn quick-open-btn" type="button" data-preset="staging">
+            <span class="env-dot env-staging"></span>Staging
+          </button>
+          <button class="btn sm-btn quick-open-btn" type="button" data-preset="prod">
+            <span class="env-dot env-prod"></span>Global Prod
+          </button>
+        </div>
+
         <div class="gsheet-row">
           <input type="text" id="gsheet-url" class="gsheet-input"
             placeholder="Paste Google Sheets URL (private sheets supported)" autocomplete="off" spellcheck="false" />
@@ -149,6 +162,15 @@
           </svg>
         </div>
         <p id="loaded-file-name" class="loaded-file-name"></p>
+        <div id="link-sync-wrap" class="link-sync-wrap hidden">
+          <label class="stoggle" title="Mirror cell edits to the other linked environment sheets when key+language exist">
+            <input type="checkbox" id="link-sync-toggle" />
+            <span class="stoggle-track"></span>
+            Sync edits to linked sheets
+          </label>
+          <button id="link-sync-refresh-btn" class="btn-link" type="button" title="Re-fetch linked sheet data">Refresh links</button>
+          <span id="link-sync-current" class="link-sync-current"></span>
+        </div>
         <button id="refresh-sheet-btn" class="icon-btn icon-btn-sm hidden" type="button" title="Refresh from Google">
           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

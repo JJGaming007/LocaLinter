@@ -1547,6 +1547,54 @@ mark.srch-hl {
   display: none;
 }
 
+/* Quick Open presets */
+.quick-open-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 0.25rem;
+}
+.quick-open-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.quick-open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.env-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  display: inline-block;
+}
+.env-dev { background: #3b82f6; }
+.env-staging { background: #f59e0b; }
+.env-prod { background: #ef4444; }
+
+/* Link sync toggle (in loaded state) */
+.link-sync-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 0.5rem 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.link-sync-wrap.hidden { display: none; }
+.link-sync-current {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
 /* Header actions cluster */
 .header-actions {
   display: flex;
