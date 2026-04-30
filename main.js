@@ -559,7 +559,11 @@ window.addEventListener('DOMContentLoaded', () => {
   async function getValidToken() {
     const cached = loadStoredToken();
     if (cached) return cached;
-    return requestAccessToken({ silent: false });
+    try {
+      return await requestAccessToken({ silent: true });
+    } catch {
+      return requestAccessToken({ silent: false });
+    }
   }
 
   function parseSheetUrl(url) {
