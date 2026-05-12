@@ -758,11 +758,12 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // ── Sheet presets (Dev / Staging / Global Prod) ──
+  // ── Sheet presets (Dev / Staging / Global Prod / Latam Prod) ──
   const SHEET_PRESETS = {
     dev:     { id: '1yyDiN-QlqXXNzFKVSA1NOINMBQyEex-0VYcnRwzZKzY', label: 'Dev' },
     staging: { id: '17lZ5oMqMuCxX6dig--YvsmAM-MuP3w_nBtDgu3_z45A', label: 'Staging' },
     prod:    { id: '1ucDqgNFb74WZCYbTVQSoUW2cTfBDZodR5ypSfC-fBBQ', label: 'Global Prod' },
+    latam:   { id: '1NdRYDmh-BxuQbfgaoeLeLcfSDalvISzOpbRxKkH1kPI', label: 'Latam Prod' },
   };
 
   function presetKeyForSpreadsheetId(id) {
