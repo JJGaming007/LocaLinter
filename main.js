@@ -556,14 +556,10 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  async function getValidToken() {
+  function getValidToken() {
     const cached = loadStoredToken();
-    if (cached) return cached;
-    try {
-      return await requestAccessToken({ silent: true });
-    } catch {
-      return requestAccessToken({ silent: false });
-    }
+    if (cached) return Promise.resolve(cached);
+    return requestAccessToken({ silent: false });
   }
 
   function parseSheetUrl(url) {
