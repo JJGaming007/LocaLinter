@@ -599,6 +599,22 @@ window.addEventListener('DOMContentLoaded', () => {
       updateAuthUI();
       throw new Error('Session expired. Please sign in again.');
     }
+    if (res.status === 403) {
+      let msg = 'Access denied. You may not have edit access to this sheet.';
+      try {
+        const err = await res.json();
+        if (err.error && err.error.message) {
+          if (err.error.message.toLowerCase().includes('insufficient')) {
+            clearToken();
+            updateAuthUI();
+            msg = 'Insufficient permissions. Please sign in again and ensure you check the box to grant Google Sheets access.';
+          } else {
+            msg = err.error.message;
+          }
+        }
+      } catch {}
+      throw new Error(msg);
+    }
     if (!res.ok) {
       let msg = `Sheets write failed (${res.status})`;
       try {
@@ -618,6 +634,22 @@ window.addEventListener('DOMContentLoaded', () => {
       clearToken();
       updateAuthUI();
       throw new Error('Session expired. Please sign in again.');
+    }
+    if (res.status === 403) {
+      let msg = 'Access denied. You may not have view access to this sheet.';
+      try {
+        const err = await res.json();
+        if (err.error && err.error.message) {
+          if (err.error.message.toLowerCase().includes('insufficient')) {
+            clearToken();
+            updateAuthUI();
+            msg = 'Insufficient permissions. Please sign in again and ensure you check the box to grant Google Sheets access.';
+          } else {
+            msg = err.error.message;
+          }
+        }
+      } catch {}
+      throw new Error(msg);
     }
     if (!res.ok) {
       let msg = `Sheets API error (${res.status})`;

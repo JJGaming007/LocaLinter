@@ -128,7 +128,10 @@
 
         <div class="gsheet-row">
           <input type="text" id="gsheet-url" class="gsheet-input"
-            placeholder="Paste Google Sheets URL (private sheets supported)" autocomplete="off" spellcheck="false" />
+            placeholder="Paste Google Sheets URL (private sheets supported)" autocomplete="off" spellcheck="false" list="sheet-presets" />
+          <datalist id="sheet-presets">
+            <option value="https://docs.google.com/spreadsheets/d/1NdRYDmh-BxuQbfgaoeLeLcfSDalvISzOpbRxKkH1kPI/edit?gid=0#gid=0">Prod Latam</option>
+          </datalist>
           <button id="gsheet-load-btn" class="btn sm-btn" type="button">
             <svg class="gsheet-icon-default" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
