@@ -1050,13 +1050,27 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function getCoalescedHeaders(rows) {
     if (!rows || rows.length === 0) return [];
-    const headerRow = rows[0];
-    let maxLen = headerRow.length;
-    // Trim trailing empty headers so we don't show phantom columns caused by stray data
-    while (maxLen > 0 && (!headerRow[maxLen - 1] || String(headerRow[maxLen - 1]).trim() === '')) {
-      maxLen--;
+    const headerRow = rows[0] || [];
+
+    // Find the true max column width across ALL rows so we don't miss data columns
+    let maxLen = 0;
+    for (let i = 0; i < rows.length; i++) {
+      if (Array.isArray(rows[i]) && rows[i].length > maxLen) maxLen = rows[i].length;
     }
-    const headers = Array.from({ length: maxLen }, (_, i) => {
+
+    // Find named header count (trim trailing empties from row 0)
+    let namedLen = headerRow.length;
+    while (namedLen > 0 && (!headerRow[namedLen - 1] || String(headerRow[namedLen - 1]).trim() === '')) {
+      namedLen--;
+    }
+
+    // Use whichever is larger — named headers or actual data width
+    const totalCols = Math.max(namedLen, maxLen);
+
+    console.log(`[LocaLinter] Header row has ${namedLen} named columns, data rows extend to ${maxLen} columns, using ${totalCols} total`);
+    console.log(`[LocaLinter] Row 0 values:`, headerRow.slice(0, 30));
+
+    const headers = Array.from({ length: totalCols }, (_, i) => {
       const h = headerRow[i];
       return (h != null && String(h).trim()) ? String(h).trim() : `Col ${i + 1}`;
     });
