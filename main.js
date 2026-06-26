@@ -1048,9 +1048,33 @@ window.addEventListener('DOMContentLoaded', () => {
     return (text.match(/\n/g) || []).length;
   }
 
+  function getCoalescedHeaders(rows) {
+    if (!rows || rows.length === 0) return [];
+    let maxLen = 0;
+    for (let i = 0; i < Math.min(rows.length, 50); i++) {
+      if (Array.isArray(rows[i]) && rows[i].length > maxLen) maxLen = rows[i].length;
+    }
+    const headers = [];
+    for (let col = 0; col < maxLen; col++) {
+      let title = '';
+      // Look at the first 3 rows to find a title for this column
+      for (let r = 0; r < Math.min(rows.length, 3); r++) {
+        const val = rows[r] ? rows[r][col] : null;
+        if (val != null && String(val).trim() !== '') {
+          title = String(val).trim();
+          break;
+        }
+      }
+      headers.push(title || `Col ${col + 1}`);
+    }
+    // Trim trailing "Col X" headers if they have no data in the entire sheet
+    // Actually, maxLen is already the max data width in the first 50 rows, which is safe enough.
+    return headers;
+  }
+
   function validateData(rows) {
     if (!rows || rows.length < 2) return;
-    const headers = rows[0];
+    const headers = getCoalescedHeaders(rows);
 
     // Get current ignore list
     const ignoreVal = (ignoreListInput.value || '').toLowerCase();
@@ -1462,16 +1486,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function initSearchTab(rows) {
     if (!rows || rows.length < 1) return;
-    const headerRow = rows[0] || [];
-    let maxLen = headerRow.length;
-    // Trim trailing empty headers so we don't show phantom columns
-    while (maxLen > 0 && (!headerRow[maxLen - 1] || String(headerRow[maxLen - 1]).trim() === '')) {
-      maxLen--;
-    }
-    const headers = Array.from({ length: maxLen }, (_, i) => {
-      const h = headerRow[i];
-      return (h != null && String(h).trim()) ? String(h).trim() : `Col ${i + 1}`;
-    });
+    const headers = getCoalescedHeaders(rows);
     srch.allCols = headers;
 
     const savedColsStr = localStorage.getItem('locaLinterSearchCols');
