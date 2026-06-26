@@ -1051,14 +1051,15 @@ window.addEventListener('DOMContentLoaded', () => {
   function getCoalescedHeaders(rows) {
     if (!rows || rows.length === 0) return [];
     let maxLen = 0;
-    for (let i = 0; i < Math.min(rows.length, 50); i++) {
+    // Scan all rows to find the absolute maximum column width, guaranteeing we don't miss columns that only have data far down the sheet.
+    for (let i = 0; i < rows.length; i++) {
       if (Array.isArray(rows[i]) && rows[i].length > maxLen) maxLen = rows[i].length;
     }
     const headers = [];
     for (let col = 0; col < maxLen; col++) {
       let title = '';
-      // Look at the first 3 rows to find a title for this column
-      for (let r = 0; r < Math.min(rows.length, 3); r++) {
+      // Look at the first 10 rows to find a title for this column, in case the actual headers are placed below notes or merged cells
+      for (let r = 0; r < Math.min(rows.length, 10); r++) {
         const val = rows[r] ? rows[r][col] : null;
         if (val != null && String(val).trim() !== '') {
           title = String(val).trim();
@@ -1067,8 +1068,6 @@ window.addEventListener('DOMContentLoaded', () => {
       }
       headers.push(title || `Col ${col + 1}`);
     }
-    // Trim trailing "Col X" headers if they have no data in the entire sheet
-    // Actually, maxLen is already the max data width in the first 50 rows, which is safe enough.
     return headers;
   }
 
