@@ -1462,9 +1462,12 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function initSearchTab(rows) {
     if (!rows || rows.length < 1) return;
-    let maxLen = 0;
-    for (const r of rows) if (Array.isArray(r) && r.length > maxLen) maxLen = r.length;
     const headerRow = rows[0] || [];
+    let maxLen = headerRow.length;
+    // Trim trailing empty headers so we don't show phantom columns
+    while (maxLen > 0 && (!headerRow[maxLen - 1] || String(headerRow[maxLen - 1]).trim() === '')) {
+      maxLen--;
+    }
     const headers = Array.from({ length: maxLen }, (_, i) => {
       const h = headerRow[i];
       return (h != null && String(h).trim()) ? String(h).trim() : `Col ${i + 1}`;
