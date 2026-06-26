@@ -792,6 +792,7 @@ window.addEventListener('DOMContentLoaded', () => {
     staging: { id: '17lZ5oMqMuCxX6dig--YvsmAM-MuP3w_nBtDgu3_z45A', label: 'Staging' },
     prod:    { id: '1ucDqgNFb74WZCYbTVQSoUW2cTfBDZodR5ypSfC-fBBQ', label: 'Global Prod' },
     latam:   { id: '1NdRYDmh-BxuQbfgaoeLeLcfSDalvISzOpbRxKkH1kPI', label: 'Latam Prod' },
+    mena:    { id: '1XBJIQ9D1qbugTB3C8yk4KSTMjeuIiI4vsHQ1krCzghA', label: 'Mena Prod' },
   };
 
   function presetKeyForSpreadsheetId(id) {

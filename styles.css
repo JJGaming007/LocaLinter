@@ -1578,6 +1578,7 @@ mark.srch-hl {
 .env-staging { background: #f59e0b; }
 .env-prod { background: #ef4444; }
 .env-latam { background: #8b5cf6; }
+.env-mena { background: #14b8a6; }
 
 /* Link sync toggle (in loaded state) */
 .link-sync-wrap {
