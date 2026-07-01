@@ -118,7 +118,7 @@ window.addEventListener('DOMContentLoaded', () => {
       const showSave = !!currentSheetRef;
       td.innerHTML = `
         <div style="display: flex; gap: 0.5rem; align-items: center;">
-          <input type="text" class="text-snippet inline-translation-input" value="${escapeHtml(translation).replace(/"/g, '&quot;')}" style="background: rgba(63,185,80,0.1); border: 1px solid rgba(63,185,80,0.3); color: var(--success); width: 100%; padding: 0.2rem 0.5rem; outline: none; border-radius: 4px; font-family: var(--font);" />
+          <input type="text" class="text-snippet inline-translation-input" dir="auto" value="${escapeHtml(translation).replace(/"/g, '&quot;')}" style="background: rgba(63,185,80,0.1); border: 1px solid rgba(63,185,80,0.3); color: var(--success); width: 100%; padding: 0.2rem 0.5rem; outline: none; border-radius: 4px; font-family: var(--font);" />
           <button class="qt-copy-btn inline-copy-btn" title="Copy" style="position: static; flex-shrink: 0;">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           </button>
@@ -1330,7 +1330,7 @@ window.addEventListener('DOMContentLoaded', () => {
           <td><strong>${escapeHtml(issue.key)}</strong>${rowSpan}</td>
           <td>${escapeHtml(issue.lang)}</td>
           <td class="issue-cell">${escapeHtml(issue.err)}</td>
-          <td><span class="text-snippet">${escapeHtml(issue.snippet)}</span></td>
+          <td><span class="text-snippet" dir="auto">${escapeHtml(issue.snippet)}</span></td>
         `;
         resultsBody.appendChild(tr);
       });
@@ -1370,7 +1370,7 @@ window.addEventListener('DOMContentLoaded', () => {
         tr.innerHTML = `
           <td><strong>${escapeHtml(issue.key)}</strong>${rowSpan}</td>
           <td>${escapeHtml(issue.lang)}</td>
-          <td><span class="text-snippet">${escapeHtml(issue.englishText)}</span></td>
+          <td><span class="text-snippet" dir="auto">${escapeHtml(issue.englishText)}</span></td>
           <td class="inline-trans-cell">
             <button class="btn btn-primary sm-btn inline-translate-btn" data-text="${escapeHtml(issue.englishText)}" data-lang="${langCode}">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
@@ -1728,6 +1728,7 @@ window.addEventListener('DOMContentLoaded', () => {
         displayCols.forEach(col => {
           const td = document.createElement('td');
           const val = row[col] ?? '';
+          td.setAttribute('dir', 'auto');
           td.innerHTML = srch.cols.includes(col) && query
             ? hlMatch(val, query, srch.mode, srch.caseSensitive)
             : escapeHtml(val);

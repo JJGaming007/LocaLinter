@@ -733,6 +733,7 @@ tbody tr:nth-child(even):hover { background: rgba(255,255,255,0.03); }
   white-space: nowrap;
   vertical-align: middle;
   transition: all var(--transition);
+  unicode-bidi: isolate;
 }
 
 .table-wrapper.wrap-text .text-snippet {
