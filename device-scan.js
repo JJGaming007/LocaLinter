@@ -19,6 +19,7 @@
   let source = null;           // EventSource
   let issues = [];
   let screens = new Map();
+  let usageSent = null;          // cumulative usage already forwarded for this run
   let running = false;
 
   document.addEventListener('DOMContentLoaded', init);
@@ -27,7 +28,7 @@
     [
       'ds-agent-url', 'ds-reconnect', 'ds-agent-status', 'ds-api-key', 'ds-save-key', 'ds-key-state',
       'ds-mode', 'ds-device', 'ds-language', 'ds-package', 'ds-probe', 'ds-start', 'ds-stop',
-      'ds-advanced-toggle', 'ds-advanced', 'ds-probe-out', 'ds-target-status',
+      'ds-advanced-toggle', 'ds-advanced', 'ds-probe-out', 'ds-agent-out', 'ds-target-status',
       'ds-max-screens', 'ds-max-actions', 'ds-max-depth', 'ds-model', 'ds-effort', 'ds-adb-path',
       'ds-vision', 'ds-scroll', 'ds-longpress', 'ds-blocked',
       'ds-run-panel', 'ds-run-status', 'ds-stat-screens', 'ds-stat-actions', 'ds-stat-issues',
@@ -71,18 +72,37 @@
   }
 
   async function api(path, options) {
-    const res = await fetch(agentUrl() + path, {
-      headers: { 'content-type': 'application/json' },
-      ...options,
-    });
+    let res;
+    try {
+      res = await fetch(agentUrl() + path, {
+        headers: { 'content-type': 'application/json' },
+        ...options,
+      });
+    } catch (e) {
+      // fetch only rejects when the request never reached the agent. "Failed to
+      // fetch" tells the user nothing, so say what is actually wrong.
+      agentOk = false;
+      setStatus(el.dsAgentStatus, 'Not running', 'bad');
+      showAgentError(`Cannot reach the agent at ${agentUrl()}.`);
+      updateStartState();
+      throw new Error(`The agent is not running at ${agentUrl()} — start it with "npm start" in agent/, then hit Reconnect.`);
+    }
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body.error || `agent returned ${res.status}`);
     return body;
   }
 
+  function showAgentError(headline) {
+    el.dsAgentOut.innerHTML =
+      `<div class="ds-msg bad">${escapeHtml(headline)}<br>` +
+      `Open a terminal in <code>agent/</code> and run <code>npm install</code> then <code>npm start</code>.</div>`;
+  }
+
   async function connect() {
     setStatus(el.dsAgentStatus, 'Connecting…', 'pending');
     localStorage.setItem(AGENT_KEY, agentUrl());
+    // Whatever the last attempt said no longer applies.
+    el.dsAgentOut.innerHTML = '';
     try {
       const health = await api('/api/health');
       agentOk = true;
@@ -95,9 +115,10 @@
     } catch (e) {
       agentOk = false;
       setStatus(el.dsAgentStatus, 'Not running', 'bad');
-      el.dsProbeOut.innerHTML =
-        `<div class="ds-msg bad">Could not reach the agent at ${escapeHtml(agentUrl())}: ${escapeHtml(e.message)}<br>` +
-        `Open a terminal in <code>agent/</code> and run <code>npm install</code> then <code>npm start</code>.</div>`;
+      // This is about the agent connection, so it belongs in the agent panel.
+      // api() already fills that in for an unreachable agent; anything else
+      // (a bad response, a wrong URL that resolves) needs its own line.
+      if (!el.dsAgentOut.innerHTML) showAgentError(`Could not reach the agent at ${agentUrl()}: ${e.message}`);
       updateStartState();
     }
   }
@@ -127,6 +148,11 @@
       toast('Paste your Anthropic API key first.', 'error');
       return;
     }
+    // An unreachable agent takes a couple of seconds to refuse the connection,
+    // so say something immediately rather than looking like a dead button.
+    const label = el.dsSaveKey.textContent;
+    el.dsSaveKey.disabled = true;
+    el.dsSaveKey.textContent = 'Saving…';
     try {
       const { config } = await api('/api/config', { method: 'POST', body: JSON.stringify({ apiKey: key }) });
       el.dsApiKey.value = '';
@@ -135,6 +161,9 @@
       toast('API key saved to the agent.');
     } catch (e) {
       toast(e.message, 'error');
+    } finally {
+      el.dsSaveKey.disabled = false;
+      el.dsSaveKey.textContent = label;
     }
   }
 
@@ -263,6 +292,7 @@
 
     issues = [];
     screens = new Map();
+    usageSent = null;
     el.dsFindings.innerHTML = '';
     el.dsLog.innerHTML = '';
     el.dsSummary.classList.add('hidden');
@@ -323,6 +353,29 @@
     };
   }
 
+  /**
+   * The agent reports usage as a running total, so forward the difference since
+   * the last report. The budget meter can then add up deltas without ever
+   * counting the same tokens twice.
+   */
+  function reportUsage(usage, { final = false } = {}) {
+    if (!usage) return;
+    const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0, costUSD: 0 };
+    const prev = usageSent || zero;
+    const delta = {};
+    let changed = false;
+    for (const k of Object.keys(zero)) {
+      delta[k] = (usage[k] || 0) - (prev[k] || 0);
+      if (delta[k] > 0) changed = true;
+    }
+    usageSent = { ...zero, ...usage };
+    if (!changed && !final) return;
+    delta.priced = usage.priced !== false;
+    delta.model = el.dsModel ? el.dsModel.value : '';
+    delta.runFinished = final;
+    document.dispatchEvent(new CustomEvent('localinter:usage', { detail: delta }));
+  }
+
   function handleEvent(ev) {
     switch (ev.type) {
       case 'status':
@@ -336,6 +389,7 @@
         el.dsStatActions.textContent = `Actions: ${ev.actions}`;
         el.dsStatIssues.textContent = `Issues: ${ev.issues}`;
         el.dsStatQueue.textContent = `Queued: ${ev.queued}`;
+        reportUsage(ev.usage);
         break;
       case 'action':
         setStatus(el.dsRunStatus, `Tapping “${truncate(ev.action.label, 40)}”`, 'pending');
@@ -382,7 +436,10 @@
         log(`${report.skipped.length} controls were not tapped because they matched a blocked-label pattern.`, 'warn');
       }
       if (report.usage) {
-        log(`Claude usage: ${report.usage.calls} calls, ${report.usage.input} in / ${report.usage.output} out tokens (${report.usage.cacheRead} cached).`, 'info');
+        const u = report.usage;
+        const cost = u.priced === false ? '' : ` ≈ $${(u.costUSD || 0).toFixed(4)}`;
+        log(`Claude usage: ${u.calls} calls, ${u.input} in / ${u.output} out tokens (${u.cacheRead} cached)${cost}.`, 'info');
+        reportUsage(u, { final: true });
       }
       el.badgeDevice.textContent = String(issues.length);
       renderFindings();

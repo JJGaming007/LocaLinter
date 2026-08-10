@@ -106,22 +106,84 @@ Ground every finding in what is actually visible in the screenshot. Do not inven
 
 Report locations in plain words a person can act on ("the yellow CLAIM button, upper right"), not coordinates.`;
 
+/**
+ * Published list prices, US dollars per million tokens. Cache reads bill at
+ * 0.1x input and cache writes at 1.25x, so a run's cost can be computed exactly
+ * from the token counts the API returns — no estimating.
+ */
+const PRICING = {
+  'claude-opus-5': { input: 5, output: 25 },
+  'claude-opus-4-8': { input: 5, output: 25 },
+  'claude-sonnet-5': { input: 3, output: 15 },
+  'claude-haiku-4-5': { input: 1, output: 5 },
+};
+
+function priceFor(model) {
+  return PRICING[model] || null;
+}
+
 class ClaudeAnalyzer {
   constructor({ apiKey, model = 'claude-opus-5', effort = 'high' }) {
     if (!apiKey) throw new Error('No Anthropic API key configured.');
     this.client = new Anthropic({ apiKey });
     this.model = model;
     this.effort = effort;
-    this.usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0 };
+    this.usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0, costUSD: 0, priced: true };
+    // Server-side refusal fallback is a beta; if this key cannot use it we stop
+    // asking rather than failing every screen.
+    this.fallbackEnabled = true;
+  }
+
+  /** Request options shared by every call, including the refusal fallback. */
+  _common() {
+    return this.fallbackEnabled
+      ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }
+      : {};
+  }
+
+  get _messages() {
+    return this.fallbackEnabled ? this.client.beta.messages : this.client.messages;
+  }
+
+  /**
+   * A key without the fallback beta rejects the request outright. That must not
+   * cost us the whole scan, so the first such failure disables the feature and
+   * the call is retried plain.
+   */
+  async _send(build) {
+    try {
+      return await build();
+    } catch (e) {
+      const msg = String(e && e.message || e);
+      if (this.fallbackEnabled && /fallback|beta/i.test(msg) && /400|invalid_request/i.test(msg)) {
+        this.fallbackEnabled = false;
+        return build();
+      }
+      throw e;
+    }
   }
 
   _track(usage) {
     if (!usage) return;
     this.usage.calls++;
-    this.usage.input += usage.input_tokens || 0;
-    this.usage.output += usage.output_tokens || 0;
-    this.usage.cacheRead += usage.cache_read_input_tokens || 0;
-    this.usage.cacheWrite += usage.cache_creation_input_tokens || 0;
+    const input = usage.input_tokens || 0;
+    const output = usage.output_tokens || 0;
+    const cacheRead = usage.cache_read_input_tokens || 0;
+    const cacheWrite = usage.cache_creation_input_tokens || 0;
+    this.usage.input += input;
+    this.usage.output += output;
+    this.usage.cacheRead += cacheRead;
+    this.usage.cacheWrite += cacheWrite;
+
+    const price = priceFor(this.model);
+    if (!price) {
+      // Unknown model: report tokens, but never invent a dollar figure.
+      this.usage.priced = false;
+      return;
+    }
+    this.usage.costUSD +=
+      (input * price.input + cacheWrite * price.input * 1.25 + cacheRead * price.input * 0.1 + output * price.output)
+      / 1e6;
   }
 
   /**
@@ -176,7 +238,8 @@ class ClaudeAnalyzer {
     lines.push('');
     lines.push('Review the screenshot now and report what those checks cannot see.');
 
-    const message = await this.client.messages.stream({
+    const message = await this._send(() => this._messages.stream({
+      ...this._common(),
       model: this.model,
       max_tokens: 16000,
       thinking: { type: 'adaptive' },
@@ -199,7 +262,7 @@ class ClaudeAnalyzer {
           ],
         },
       ],
-    }).finalMessage();
+    }).finalMessage());
 
     this._track(message.usage);
 
@@ -231,7 +294,8 @@ class ClaudeAnalyzer {
    * @param {string[]} alreadyTried  labels already tapped on this screen
    */
   async proposeTargets(png, alreadyTried = []) {
-    const message = await this.client.messages.stream({
+    const message = await this._send(() => this._messages.stream({
+      ...this._common(),
       model: this.model,
       max_tokens: 4000,
       thinking: { type: 'adaptive' },
@@ -286,7 +350,7 @@ ${alreadyTried.length ? `Already tried on this screen, skip them: ${alreadyTried
           ],
         },
       ],
-    }).finalMessage();
+    }).finalMessage());
 
     this._track(message.usage);
     const text = (message.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
@@ -308,7 +372,8 @@ ${alreadyTried.length ? `Already tried on this screen, skip them: ${alreadyTried
       .map((i) => `- [${i.type}] ${i.screenId}: "${i.text}" — ${i.message}`)
       .join('\n');
 
-    const message = await this.client.messages.stream({
+    const message = await this._send(() => this._messages.stream({
+      ...this._common(),
       model: this.model,
       max_tokens: 4000,
       thinking: { type: 'adaptive' },
@@ -326,11 +391,11 @@ ${top || '(none)'}
 Write a short readout for the localization lead: what is broken, which failures share a root cause, and what to fix first. Lead with the outcome. Plain prose, no headings, under 200 words.`,
         },
       ],
-    }).finalMessage();
+    }).finalMessage());
 
     this._track(message.usage);
     return (message.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
   }
 }
 
-module.exports = { ClaudeAnalyzer, ISSUE_TYPES };
+module.exports = { ClaudeAnalyzer, ISSUE_TYPES, PRICING };

@@ -277,6 +277,9 @@ async function startScan({ run, cfg, sheet, target, mode, serial }) {
     },
   });
 
+  // Same object the analyzer mutates, so a report fetched mid-run is current.
+  run.usage = analyzer.usage;
+
   try {
     await crawler.start();
     run.usage = analyzer.usage;

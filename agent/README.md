@@ -86,7 +86,7 @@ Set in the UI, stored in `agent/config.json`.
 | Model | `claude-opus-5` | `claude-sonnet-5` is faster and cheaper per screen |
 | Effort | `high` | `xhigh` for the most thorough reading |
 | Claude vision pass | on | Off = mechanical checks only, no API cost |
-| Scroll through lists | on | Steps every ScrollRect (bridge only) |
+| Scroll through lists | on | Steps every ScrollRect with the bridge; swipes until the screen stops changing without it |
 | Long-press for tooltips | on | Long-presses info, help, and "?" controls |
 | Android package | — | Lets the agent restart the app when it cannot find its way back |
 
@@ -95,6 +95,19 @@ Set in the UI, stored in `agent/config.json`.
 Findings appear live in the Device Scan tab, grouped by screen with the
 screenshot beside them, and can be exported as JSON. Every run also writes
 `agent/runs/<run-id>/` with `report.json` and a PNG per screen.
+
+## What a scan costs
+
+Each run reports `usage` — input, output, and cached tokens, the number of API
+calls, and `costUSD`, which is those token counts priced at the published rate
+for the model you ran. It is a measurement, not an estimate. The figure updates
+while the scan is running and feeds the spend readout in the sidebar. If you run
+a model with no published rate in `lib/claude.js`, the run reports tokens and
+sets `priced: false` rather than guessing a price.
+
+Safety classifiers occasionally decline a screenshot. Rather than losing that
+screen, the agent asks the API to fall back to another model for the declined
+request; if the key cannot use that feature, it stops asking and carries on.
 
 ## Troubleshooting
 

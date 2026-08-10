@@ -1410,7 +1410,7 @@ window.addEventListener('DOMContentLoaded', () => {
     resultsContainer.classList.remove('hidden');
     container.classList.add('has-results');
     dropzone.classList.add('file-loaded');
-    statScanned.textContent = `Rows Scanned: ${scannedCount}`;
+    statScanned.textContent = scannedCount.toLocaleString();
 
     const totalFormat = allFormatIssues.length;
     const totalMissing = allMissingIssues.length;
@@ -1430,14 +1430,14 @@ window.addEventListener('DOMContentLoaded', () => {
 
     if (totalIssues === 0) {
       statIssuesContainer.className = 'stat-pill success';
-      statIssues.textContent = 'All Clear! No issues.';
+      statIssues.textContent = 'None';
       return;
     }
 
     statIssuesContainer.className = 'stat-pill danger';
-    let issuesText = `Issues Found: ${totalIssues} (${totalFormat} Format, ${totalMissing} Missing)`;
+    let issuesText = `${totalIssues.toLocaleString()}`;
     if (isFiltered) {
-      issuesText += ` — Showing ${formatIssues.length + missingIssues.length} for ${langFilter.value}`;
+      issuesText += ` · ${(formatIssues.length + missingIssues.length).toLocaleString()} in ${langFilter.value}`;
     }
     statIssues.textContent = issuesText;
   }

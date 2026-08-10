@@ -44,6 +44,7 @@ class Crawler {
 
     this.visited = new Map();          // sig -> screenId
     this.hashes = [];                  // [{ hash, sig }] for near-duplicate detection
+    this.triedLabels = new Map();      // screenId -> labels already acted on (vision mode)
     this.stack = [];                   // pending { action, parent }
     this.actionCount = 0;
     this.screenCount = 0;
@@ -93,11 +94,15 @@ class Crawler {
     return `h:${cap.hash || Math.random()}`;
   }
 
-  /** Near-duplicate check for vision mode, where a few animated pixels differ. */
+  /**
+   * Near-duplicate check for vision mode, where a few animated pixels differ.
+   * Kept tight on purpose: a loose threshold silently drops a real screen, and
+   * re-analysing a near-identical one only costs a little.
+   */
   matchExistingHash(hash) {
     if (!hash) return null;
     for (const h of this.hashes) {
-      if (hammingDistance(h.hash, hash) <= 6) return h.sig;
+      if (hammingDistance(h.hash, hash) <= 3) return h.sig;
     }
     return null;
   }
@@ -156,7 +161,7 @@ class Crawler {
       // vision mode — let the model find the controls
       let targets = [];
       try {
-        targets = await this.analyzer.proposeTargets(cap.png, []);
+        targets = await this.analyzer.proposeTargets(cap.png, this.triedLabels.get(screenId) || []);
       } catch (e) {
         this.run.log(`Could not propose tap targets: ${e.message}`, 'warn');
       }
@@ -403,9 +408,67 @@ class Crawler {
     return deduped;
   }
 
-  /** Steps every scroll view through its range so off-screen text is not missed. */
+  /**
+   * Text below the fold is invisible to a single screenshot, so every screen
+   * gets scrolled through before we move on. With the bridge we drive each
+   * ScrollRect exactly; without it we swipe and watch for the screen to stop
+   * changing, which is what "reached the bottom" looks like from outside.
+   */
   async probeScrolls(cap, baseId, depth, pathLabels) {
-    if (!this.cfg.scrollProbe || !this.useBridge) return;
+    if (!this.cfg.scrollProbe) return;
+    if (this.useBridge && cap.state && Array.isArray(cap.state.scrolls)) {
+      return this.probeBridgeScrolls(cap, baseId, depth, pathLabels);
+    }
+    return this.probeSwipeScrolls(cap, baseId, depth, pathLabels);
+  }
+
+  /** Vision mode: swipe down the screen until nothing new appears. */
+  async probeSwipeScrolls(cap, baseId, depth, pathLabels) {
+    if (!this.adb) return;
+    const size = this.deviceSize || { width: 1080, height: 1920 };
+    const x = Math.round(size.width / 2);
+    const from = Math.round(size.height * 0.72);
+    const to = Math.round(size.height * 0.28);
+
+    let prevSig = this.signature(cap);
+    let steps = 0;
+
+    for (let step = 1; step <= this.cfg.scrollSteps; step++) {
+      if (this.run.stopRequested) break;
+      try {
+        await this.adb.swipe(x, from, x, to, 400);
+      } catch (e) {
+        this.run.log(`Could not swipe on ${baseId}: ${e.message}`, 'warn');
+        break;
+      }
+      const next = await this.settle();
+      const sig = this.signature(next);
+
+      // Nothing moved — this screen does not scroll, or we hit the bottom.
+      if (sig === prevSig) break;
+      const near = this.matchExistingHash(next.hash);
+      if (near && !next.state) { prevSig = sig; steps++; continue; }
+      prevSig = sig;
+      steps++;
+
+      if (this.visited.has(sig)) continue;
+      const id = `${baseId}-scroll${step}`;
+      this.visited.set(sig, id);
+      if (next.hash) this.hashes.push({ hash: next.hash, sig });
+      this.screenCount++;
+      this.run.log(`Scrolled ${baseId} down (${step}) — capturing ${id}`);
+      await this.analyzeScreen(next, id, depth, [...pathLabels, `scroll down ${step}`]);
+    }
+
+    // Put the screen back where we found it so the parent state still matches.
+    for (let i = 0; i < steps; i++) {
+      try { await this.adb.swipe(x, to, x, from, 400); } catch { break; }
+    }
+    if (steps) await sleep(this.cfg.settleMs);
+  }
+
+  /** Bridge mode: step each ScrollRect through its full range. */
+  async probeBridgeScrolls(cap, baseId, depth, pathLabels) {
     const scrolls = (cap.state && cap.state.scrolls) || [];
     for (const s of scrolls) {
       if (!s.canScroll) continue;
@@ -486,6 +549,7 @@ class Crawler {
         actions: this.actionCount,
         queued: this.stack.length,
         issues: this.run.issues.length,
+        usage: this.analyzer ? this.analyzer.usage : null,
       });
 
       const onCourse = await this.navigateTo(task.parent);
@@ -502,6 +566,9 @@ class Crawler {
       }
 
       let acted = true;
+      const tried = this.triedLabels.get(task.parent.screenId) || [];
+      if (task.action.label) tried.push(task.action.label);
+      this.triedLabels.set(task.parent.screenId, tried);
       try {
         await this.perform(task.action);
       } catch (e) {
@@ -542,6 +609,7 @@ class Crawler {
       actions: this.actionCount,
       queued: this.stack.length,
       issues: this.run.issues.length,
+      usage: this.analyzer ? this.analyzer.usage : null,
     });
     return { screens: this.screenCount, actions: this.actionCount };
   }
