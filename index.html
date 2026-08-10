@@ -11,12 +11,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="device-scan.css" />
   <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
   <!-- Replace content with your Google OAuth Client ID (from Google Cloud Console) -->
   <meta name="google-oauth-client-id" content="454916925795-s83bblcn67b69platl0q6m8avp2upfvm.apps.googleusercontent.com" />
   <script src="assets/xlsx.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="main.js?v=1.7" defer></script>
+  <script src="device-scan.js?v=1.0" defer></script>
 </head>
 
 <body>
@@ -257,6 +259,14 @@
           </svg>
           Search
         </button>
+        <button class="tab-btn" data-tab="device-scan" role="tab" aria-selected="false" id="tab-btn-device">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+            <line x1="12" y1="18" x2="12.01" y2="18" />
+          </svg>
+          Device Scan <span id="badge-device" class="badge">0</span>
+        </button>
       </div>
 
       <div class="results-header">
@@ -408,6 +418,161 @@
           </div>
 
           <div class="search-pagination" id="searchPagination"></div>
+        </div>
+      </div>
+
+      <!-- Device Scan Tab -->
+      <div id="tab-device-scan" class="tab-content">
+        <div class="ds-wrap">
+
+          <!-- Agent connection -->
+          <div class="ds-panel">
+            <div class="ds-panel-head">
+              <h3>Local agent</h3>
+              <span class="ds-status" id="ds-agent-status">Checking…</span>
+            </div>
+            <p class="ds-hint">
+              ADB and the Claude API run on your machine, not in the browser. Start the agent with
+              <code>npm install &amp;&amp; npm start</code> in <code>agent/</code>, then reconnect.
+            </p>
+            <div class="ds-row">
+              <label for="ds-agent-url">Agent URL</label>
+              <input type="text" id="ds-agent-url" value="http://127.0.0.1:8790" spellcheck="false" />
+              <button class="btn btn-secondary sm-btn" id="ds-reconnect">Reconnect</button>
+            </div>
+            <div class="ds-row">
+              <label for="ds-api-key">Anthropic API key</label>
+              <input type="password" id="ds-api-key" placeholder="sk-ant-…" autocomplete="off" spellcheck="false" />
+              <button class="btn btn-secondary sm-btn" id="ds-save-key">Save key</button>
+            </div>
+            <p class="ds-hint" id="ds-key-state"></p>
+          </div>
+
+          <!-- Target -->
+          <div class="ds-panel">
+            <div class="ds-panel-head">
+              <h3>What to scan</h3>
+              <span class="ds-status" id="ds-target-status"></span>
+            </div>
+            <div class="ds-grid">
+              <div class="ds-field">
+                <label for="ds-mode">Target</label>
+                <select id="ds-mode">
+                  <option value="device">Android device (ADB)</option>
+                  <option value="editor">Unity Editor (Play Mode)</option>
+                </select>
+              </div>
+              <div class="ds-field">
+                <label for="ds-device">Device</label>
+                <select id="ds-device"><option value="">No devices found</option></select>
+              </div>
+              <div class="ds-field">
+                <label for="ds-language">Language column</label>
+                <select id="ds-language"><option value="">Load a sheet first</option></select>
+              </div>
+              <div class="ds-field">
+                <label for="ds-package">Android package <span class="ds-opt">(optional)</span></label>
+                <input type="text" id="ds-package" placeholder="com.studio.game" spellcheck="false" />
+              </div>
+            </div>
+            <div class="ds-row ds-actions">
+              <button class="btn btn-secondary sm-btn" id="ds-probe">Test connection</button>
+              <button class="btn btn-primary" id="ds-start" disabled>Start scan</button>
+              <button class="btn btn-secondary sm-btn hidden" id="ds-stop">Stop</button>
+              <button class="btn btn-secondary sm-btn" id="ds-advanced-toggle">Advanced</button>
+            </div>
+            <div class="ds-probe-out" id="ds-probe-out"></div>
+
+            <div class="ds-advanced hidden" id="ds-advanced">
+              <div class="ds-grid">
+                <div class="ds-field">
+                  <label for="ds-max-screens">Max screens</label>
+                  <input type="number" id="ds-max-screens" value="120" min="1" max="1000" />
+                </div>
+                <div class="ds-field">
+                  <label for="ds-max-actions">Max actions</label>
+                  <input type="number" id="ds-max-actions" value="400" min="1" max="5000" />
+                </div>
+                <div class="ds-field">
+                  <label for="ds-max-depth">Max depth</label>
+                  <input type="number" id="ds-max-depth" value="12" min="1" max="40" />
+                </div>
+                <div class="ds-field">
+                  <label for="ds-model">Model</label>
+                  <select id="ds-model">
+                    <option value="claude-opus-5">Claude Opus 5 (most thorough)</option>
+                    <option value="claude-sonnet-5">Claude Sonnet 5 (faster, cheaper)</option>
+                  </select>
+                </div>
+                <div class="ds-field">
+                  <label for="ds-effort">Effort</label>
+                  <select id="ds-effort">
+                    <option value="xhigh">Extra high</option>
+                    <option value="high" selected>High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                  </select>
+                </div>
+                <div class="ds-field">
+                  <label for="ds-adb-path">ADB path <span class="ds-opt">(optional)</span></label>
+                  <input type="text" id="ds-adb-path" placeholder="adb" spellcheck="false" />
+                </div>
+              </div>
+              <div class="ds-toggles">
+                <label class="stoggle"><input type="checkbox" id="ds-vision" checked /><span class="stoggle-track"></span> Claude vision pass</label>
+                <label class="stoggle"><input type="checkbox" id="ds-scroll" checked /><span class="stoggle-track"></span> Scroll through lists</label>
+                <label class="stoggle"><input type="checkbox" id="ds-longpress" checked /><span class="stoggle-track"></span> Long-press for tooltips</label>
+              </div>
+              <div class="ds-field ds-field-wide">
+                <label for="ds-blocked">Never tap controls matching <span class="ds-opt">(one pattern per line — protects against purchases and destructive actions)</span></label>
+                <textarea id="ds-blocked" rows="4" spellcheck="false"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live run -->
+          <div class="ds-panel hidden" id="ds-run-panel">
+            <div class="ds-panel-head">
+              <h3>Scan</h3>
+              <span class="ds-status" id="ds-run-status"></span>
+            </div>
+            <div class="ds-stats">
+              <div class="stat-pill neutral"><span id="ds-stat-screens">Screens: 0</span></div>
+              <div class="stat-pill neutral"><span id="ds-stat-actions">Actions: 0</span></div>
+              <div class="stat-pill danger"><span id="ds-stat-issues">Issues: 0</span></div>
+              <div class="stat-pill neutral"><span id="ds-stat-queue">Queued: 0</span></div>
+            </div>
+            <div class="ds-summary hidden" id="ds-summary"></div>
+            <details class="ds-log-wrap">
+              <summary>Activity log</summary>
+              <div class="ds-log" id="ds-log"></div>
+            </details>
+          </div>
+
+          <!-- Findings -->
+          <div class="ds-panel hidden" id="ds-results-panel">
+            <div class="ds-panel-head">
+              <h3>Findings</h3>
+              <div class="ds-filters">
+                <select id="ds-filter-severity">
+                  <option value="all">All severities</option>
+                  <option value="high">High only</option>
+                  <option value="medium">Medium and up</option>
+                </select>
+                <select id="ds-filter-type"><option value="all">All types</option></select>
+                <input type="text" id="ds-filter-text" class="search-query-input" placeholder="Filter findings…" />
+                <button class="btn btn-secondary sm-btn" id="ds-export">Export JSON</button>
+              </div>
+            </div>
+            <div class="ds-findings" id="ds-findings"></div>
+          </div>
+
+          <div class="ds-shot-overlay hidden" id="ds-shot-overlay">
+            <button class="ds-shot-close" id="ds-shot-close">✕</button>
+            <img id="ds-shot-img" alt="Captured screen" />
+            <div class="ds-shot-caption" id="ds-shot-caption"></div>
+          </div>
+
         </div>
       </div>
     </div>

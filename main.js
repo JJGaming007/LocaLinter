@@ -293,19 +293,36 @@ window.addEventListener('DOMContentLoaded', () => {
     const content = document.getElementById('tab-' + tabId);
     if (content) content.classList.add('active');
 
-    // UI Isolation for Search Tab
-    const isSearch = tabId === 'search';
+    // UI isolation: Search and Device Scan own the full width, no validation header
+    const isolated = tabId === 'search' || tabId === 'device-scan';
     if (globalSettingsBtn) {
-      if (isSearch) globalSettingsBtn.classList.add('v-hidden');
+      if (isolated) globalSettingsBtn.classList.add('v-hidden');
       else globalSettingsBtn.classList.remove('v-hidden');
     }
     if (resultsHeader) {
-      if (isSearch) resultsHeader.classList.add('hidden');
+      if (isolated) resultsHeader.classList.add('hidden');
       else resultsHeader.classList.remove('hidden');
     }
 
     localStorage.setItem('locaLinterActiveTab', tabId);
+    document.dispatchEvent(new CustomEvent('localinter:tab', { detail: { tabId } }));
   }
+
+  // ── Bridge to device-scan.js ──
+  // The Device Scan tab needs the sheet that is already loaded here, and the
+  // agent needs to be told when it changes.
+  window.LocaLinter = {
+    getSheet() {
+      if (!currentRows || currentRows.length < 2) return null;
+      return {
+        name: currentFileName || 'sheet',
+        headers: currentRows[0].map(h => (h == null ? '' : String(h))),
+        rows: currentRows.slice(1),
+      };
+    },
+    showToast,
+    switchTab,
+  };
 
   tabBtns.forEach(btn => {
     btn.addEventListener('click', () => {

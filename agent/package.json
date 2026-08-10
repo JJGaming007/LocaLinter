@@ -1,0 +1,14 @@
+{
+  "name": "localinter-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local agent for LocaLinter Device Scan — drives an Android device over ADB (or the Unity Editor over the in-app bridge), crawls every screen, and compares rendered UI text against the localization sheet using the Claude API.",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0"
+  }
+}
