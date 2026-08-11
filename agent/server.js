@@ -219,7 +219,7 @@ function pickOverrides(options) {
   for (const k of ['visionEnabled', 'scrollProbe', 'longPressProbe', 'routeSetLanguage']) {
     if (typeof options[k] === 'boolean') out[k] = options[k];
   }
-  for (const k of ['androidPackage', 'model', 'effort', 'baseUrl']) {
+  for (const k of ['androidPackage', 'model', 'effort', 'baseUrl', 'extraChecks']) {
     if (typeof options[k] === 'string' && options[k].trim()) out[k] = options[k].trim();
   }
   if (Array.isArray(options.blockedLabels)) out.blockedLabels = options.blockedLabels.map(String);
@@ -307,7 +307,8 @@ async function startScan({ run, cfg, sheet, target, mode, serial, route }) {
     } catch { /* Unity Localization not installed — fine */ }
   }
 
-  const analyzer = new ClaudeAnalyzer({ apiKey: cfg.apiKey, model: cfg.model, effort: cfg.effort, baseUrl: cfg.baseUrl });
+  const analyzer = new ClaudeAnalyzer({ apiKey: cfg.apiKey, model: cfg.model, effort: cfg.effort, baseUrl: cfg.baseUrl, extraChecks: cfg.extraChecks });
+  if (cfg.extraChecks) run.log(`Applying extra checks from the run settings.`);
   if (cfg.baseUrl) run.log(`Model endpoint: ${cfg.baseUrl}`);
   run.log(`Using ${cfg.model} at ${cfg.effort} effort.`);
 

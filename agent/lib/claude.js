@@ -126,7 +126,7 @@ function priceFor(model, baseUrl) {
 }
 
 class ClaudeAnalyzer {
-  constructor({ apiKey, model = 'claude-opus-5', effort = 'high', baseUrl = '' }) {
+  constructor({ apiKey, model = 'claude-opus-5', effort = 'high', baseUrl = '', extraChecks = '' }) {
     if (!apiKey) throw new Error('No Anthropic API key configured.');
     // A base URL points the SDK at a company gateway (LiteLLM and friends)
     // that speaks the same /v1/messages format. Empty means Anthropic direct.
@@ -134,6 +134,9 @@ class ClaudeAnalyzer {
     this.baseUrl = baseUrl || '';
     this.model = model;
     this.effort = effort;
+    // Whatever the team wants looked for on top of the built-in checks —
+    // house style, terms that must never appear, a glossary rule.
+    this.extraChecks = String(extraChecks || '').trim();
     this.usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0, costUSD: 0, priced: true };
     // Server-side refusal fallback is a beta; if this key cannot use it we stop
     // asking rather than failing every screen.
@@ -255,6 +258,12 @@ class ClaudeAnalyzer {
       },
       system: [
         { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+        ...(this.extraChecks ? [{
+          type: 'text',
+          text: `Additional checks requested for this project. Apply them alongside everything above, and report anything that breaks them as an issue:
+${this.extraChecks}`,
+          cache_control: { type: 'ephemeral' },
+        }] : []),
       ],
       messages: [
         {

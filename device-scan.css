@@ -388,3 +388,23 @@
 .ds-route-meta { color: var(--muted); margin-left: 0.4rem; }
 .ds-route-dim { color: var(--muted); }
 .ds-route-warn { color: var(--warning); }
+
+/* A rule box needs the full width of the grid to be readable. */
+.ds-field-wide { grid-column: 1 / -1; }
+
+.ds-field textarea {
+  width: 100%;
+  resize: vertical;
+  background: var(--panel-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  padding: 0.5rem 0.6rem;
+  outline: none;
+  transition: border-color var(--transition);
+}
+.ds-field textarea:focus { border-color: var(--accent-line); }
+.ds-field textarea::placeholder { color: var(--faint); }

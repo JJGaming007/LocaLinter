@@ -9,6 +9,7 @@ const DEFAULTS = {
   // Claude
   apiKey: '',                       // falls back to process.env.ANTHROPIC_API_KEY
   baseUrl: '',                      // '' => api.anthropic.com; set for a company gateway
+  extraChecks: '',                  // project-specific rules added to the vision pass
   model: 'claude-opus-5',
   effort: 'high',                   // low | medium | high | xhigh | max
   visionEnabled: true,              // run the Claude vision pass per screen

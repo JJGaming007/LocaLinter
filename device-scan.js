@@ -30,7 +30,7 @@
       'ds-mode', 'ds-device', 'ds-sheet', 'ds-language', 'ds-package', 'ds-route', 'ds-route-card', 'ds-probe', 'ds-start', 'ds-stop',
       'ds-advanced-toggle', 'ds-advanced', 'ds-probe-out', 'ds-agent-out', 'ds-target-status',
       'ds-max-screens', 'ds-max-actions', 'ds-max-depth', 'ds-model', 'ds-effort', 'ds-adb-path',
-      'ds-vision', 'ds-scroll', 'ds-longpress', 'ds-blocked', 'ds-base-url',
+      'ds-vision', 'ds-scroll', 'ds-longpress', 'ds-blocked', 'ds-base-url', 'ds-extra-checks',
       'ds-run-panel', 'ds-run-status', 'ds-stat-screens', 'ds-stat-actions', 'ds-stat-issues',
       'ds-stat-queue', 'ds-summary', 'ds-log', 'ds-results-panel', 'ds-findings',
       'ds-filter-severity', 'ds-filter-type', 'ds-filter-text', 'ds-export',
@@ -139,6 +139,7 @@
     if (c.effort) el.dsEffort.value = c.effort;
     el.dsAdbPath.value = c.adbPath || '';
     el.dsBaseUrl.value = c.baseUrl || '';
+    el.dsExtraChecks.value = c.extraChecks || '';
     el.dsPackage.value = c.androidPackage || '';
     el.dsMaxScreens.value = c.maxScreens;
     el.dsMaxActions.value = c.maxActions;
@@ -442,7 +443,7 @@
     try {
       await api('/api/config', {
         method: 'POST',
-        body: JSON.stringify({ adbPath: el.dsAdbPath.value.trim(), baseUrl: el.dsBaseUrl.value.trim(), ...options() }),
+        body: JSON.stringify({ adbPath: el.dsAdbPath.value.trim(), baseUrl: el.dsBaseUrl.value.trim(), extraChecks: el.dsExtraChecks.value.trim(), ...options() }),
       });
       const r = await api('/api/run/start', {
         method: 'POST',
@@ -457,7 +458,8 @@
       });
       runId = r.runId;
       running = true;
-      el.dsStop.classList.remove('hidden');
+      el.dsStop.disabled = false;
+      el.dsStop.textContent = 'Stop scan';
       updateStartState();
       log(`Scanning ${r.language} in ${r.mode} mode.`, 'info');
       listen();
@@ -470,11 +472,19 @@
 
   async function stop() {
     if (!runId) return;
+    // The scan finishes the screen it is on before it unwinds, which with the
+    // vision pass can take the better part of a minute. Say that, rather than
+    // leaving a dead-looking button.
+    el.dsStop.disabled = true;
+    el.dsStop.textContent = 'Stopping…';
+    setStatus(el.dsRunStatus, 'Stopping — finishing the current screen', 'pending');
     try {
       await api(`/api/run/${runId}/stop`, { method: 'POST' });
-      log('Stop requested — finishing the current screen.', 'warn');
+      log('Stop requested — finishing the current screen, then wrapping up.', 'warn');
     } catch (e) {
       toast(e.message, 'error');
+      el.dsStop.disabled = false;
+      el.dsStop.textContent = 'Stop scan';
     }
   }
 
@@ -545,7 +555,8 @@
         break;
       case 'done':
         running = false;
-        el.dsStop.classList.add('hidden');
+        el.dsStop.disabled = true;
+        el.dsStop.textContent = 'Stop scan';
         updateStartState();
         if (source) source.close();
         setStatus(

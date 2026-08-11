@@ -687,12 +687,17 @@
                 <label for="ds-route">Route map <span class="ds-opt">(what earlier passes learned)</span></label>
                 <select id="ds-route"><option value="">Explore from scratch</option></select>
               </div>
+              <div class="ds-field ds-field-wide">
+                <label for="ds-extra-checks">Also check for <span class="ds-opt">(one rule per line, applied on every screen)</span></label>
+                <textarea id="ds-extra-checks" rows="3" spellcheck="false"
+                  placeholder="Never use ROBINET for a tap control&#10;Currency must match the player's region&#10;Map names stay in English"></textarea>
+              </div>
             </div>
             <div class="ds-route-card hidden" id="ds-route-card"></div>
             <div class="ds-row ds-actions">
               <button class="btn btn-secondary sm-btn" id="ds-probe">Test connection</button>
               <button class="btn btn-primary" id="ds-start" disabled>Start scan</button>
-              <button class="btn btn-secondary sm-btn hidden" id="ds-stop">Stop</button>
+              <button class="btn btn-secondary sm-btn" id="ds-stop" disabled>Stop scan</button>
               <button class="btn btn-secondary sm-btn" id="ds-advanced-toggle">Advanced</button>
             </div>
             <div class="ds-probe-out" id="ds-probe-out"></div>
