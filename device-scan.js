@@ -27,7 +27,7 @@
   function init() {
     [
       'ds-agent-url', 'ds-reconnect', 'ds-agent-status', 'ds-api-key', 'ds-save-key', 'ds-key-state',
-      'ds-mode', 'ds-device', 'ds-language', 'ds-package', 'ds-probe', 'ds-start', 'ds-stop',
+      'ds-mode', 'ds-device', 'ds-sheet', 'ds-language', 'ds-package', 'ds-probe', 'ds-start', 'ds-stop',
       'ds-advanced-toggle', 'ds-advanced', 'ds-probe-out', 'ds-agent-out', 'ds-target-status',
       'ds-max-screens', 'ds-max-actions', 'ds-max-depth', 'ds-model', 'ds-effort', 'ds-adb-path',
       'ds-vision', 'ds-scroll', 'ds-longpress', 'ds-blocked',
@@ -57,11 +57,16 @@
     [el.dsFilterSeverity, el.dsFilterType].forEach((s) => s.addEventListener('change', renderFindings));
     el.dsFilterText.addEventListener('input', renderFindings);
 
+    el.dsSheet.addEventListener('change', onSheetChange);
+
     document.addEventListener('localinter:tab', (e) => {
-      if (e.detail.tabId === 'device-scan') refreshLanguages();
+      if (e.detail.tabId === 'device-scan') refreshSheets();
     });
+    // Loading a sheet anywhere in the app re-points the scan at it.
+    document.addEventListener('localinter:sheet', refreshSheets);
 
     onModeChange();
+    refreshSheets();
     connect();
   }
 
@@ -201,6 +206,53 @@
 
   function sheet() {
     return window.LocaLinter && window.LocaLinter.getSheet ? window.LocaLinter.getSheet() : null;
+  }
+
+  // ── which sheet to compare against ──────────────────────────────────────
+
+  function api_() { return window.LocaLinter || {}; }
+
+  function refreshSheets() {
+    const L = api_();
+    if (!el.dsSheet || !L.getPresets) return;
+    const presets = L.getPresets();
+    const currentKey = L.getCurrentPresetKey ? L.getCurrentPresetKey() : null;
+    const s = sheet();
+
+    el.dsSheet.innerHTML = '';
+    const loaded = document.createElement('option');
+    loaded.value = '';
+    loaded.textContent = s ? `Loaded sheet — ${s.name}` : 'No sheet loaded';
+    el.dsSheet.appendChild(loaded);
+
+    presets.forEach((p) => {
+      const opt = document.createElement('option');
+      opt.value = p.key;
+      opt.textContent = p.label;
+      el.dsSheet.appendChild(opt);
+    });
+
+    el.dsSheet.value = currentKey && presets.some((p) => p.key === currentKey) ? currentKey : '';
+    refreshLanguages();
+  }
+
+  async function onSheetChange() {
+    const key = el.dsSheet.value;
+    if (!key) return;
+    const L = api_();
+    if (!L.loadPreset) return;
+    const label = el.dsSheet.options[el.dsSheet.selectedIndex].textContent;
+    el.dsSheet.disabled = true;
+    setStatus(el.dsTargetStatus, `Loading ${label}…`, 'pending');
+    try {
+      await L.loadPreset(key);
+    } catch (e) {
+      toast(e.message || `Could not load ${label}.`, 'error');
+      setStatus(el.dsTargetStatus, `Could not load ${label}`, 'bad');
+    } finally {
+      el.dsSheet.disabled = false;
+      refreshSheets();
+    }
   }
 
   function refreshLanguages() {

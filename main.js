@@ -320,6 +320,20 @@ window.addEventListener('DOMContentLoaded', () => {
         rows: currentRows.slice(1),
       };
     },
+    // A scan is only as correct as the sheet it compares against, so the
+    // Device Scan tab lets you pick one rather than inheriting whatever
+    // happens to be open.
+    getPresets() {
+      return Object.entries(SHEET_PRESETS).map(([key, p]) => ({ key, label: p.label, id: p.id }));
+    },
+    getCurrentPresetKey() {
+      return presetKeyForSpreadsheetId(currentSheetRef && currentSheetRef.spreadsheetId);
+    },
+    loadPreset(key) {
+      const preset = SHEET_PRESETS[key];
+      if (!preset) return Promise.reject(new Error('Unknown sheet.'));
+      return loadFromSheetUrl(`https://docs.google.com/spreadsheets/d/${preset.id}/edit?gid=0#gid=0`);
+    },
     showToast,
     switchTab,
   };
@@ -418,6 +432,7 @@ window.addEventListener('DOMContentLoaded', () => {
     loadedContent.classList.remove('hidden');
     loadedFileName.textContent = `Loaded: ${name}`;
     if (typeof updateLinkSyncUI === 'function') updateLinkSyncUI();
+    document.dispatchEvent(new CustomEvent('localinter:sheet', { detail: { name } }));
   }
 
   // ── Google Sheets loader (OAuth via Google Identity Services) ──
@@ -620,6 +635,14 @@ window.addEventListener('DOMContentLoaded', () => {
       }
       if (!window.google || !google.accounts || !google.accounts.oauth2) {
         reject(new Error('Google Identity Services not loaded yet. Try again in a moment.'));
+        return;
+      }
+      // Any token request can end up opening a Google window when it cannot
+      // be served from an existing session. Until the user has interacted
+      // with the page, refuse — otherwise a background refresh (the sheet
+      // reload on startup, say) pops a window nobody asked for.
+      if (navigator.userActivation && !navigator.userActivation.hasBeenActive) {
+        reject(new Error('Sign in to continue.'));
         return;
       }
       const allowed = getAllowedDomains();
