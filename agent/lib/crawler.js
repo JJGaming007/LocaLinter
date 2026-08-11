@@ -1,7 +1,7 @@
 'use strict';
 
 const { runChecks } = require('./checks');
-const { perceptualHash, hammingDistance } = require('./png');
+const { perceptualHash, hammingDistance, size: pngSize } = require('./png');
 const { norm } = require('./sheet');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -81,6 +81,21 @@ class Crawler {
       }
     }
     const png = await this.screenshot();
+    // `adb shell wm size` reports the panel in its natural orientation, which
+    // for a landscape game is the wrong way round — taps computed against it
+    // land nowhere near the control. The screenshot is what is actually on
+    // screen, so its dimensions are the coordinate space to tap in.
+    try {
+      const s = pngSize(png);
+      if (s.width && s.height) {
+        if (!this.deviceSize || this.deviceSize.width !== s.width || this.deviceSize.height !== s.height) {
+          if (this.deviceSize) {
+            this.run.log(`Screen is ${s.width}x${s.height} (was ${this.deviceSize.width}x${this.deviceSize.height}) — using the screenshot's orientation.`);
+          }
+          this.deviceSize = s;
+        }
+      }
+    } catch { /* keep whatever we had */ }
     let hash = null;
     try { hash = perceptualHash(png); } catch { /* unusual PNG flavour; fall back to text signature */ }
     return { state, png, hash };
@@ -687,8 +702,9 @@ class Crawler {
 
     if (this.adb) {
       try {
-        this.deviceSize = await this.adb.screenSize();
-        this.run.log(`Device screen: ${this.deviceSize.width}x${this.deviceSize.height}`);
+        const reported = await this.adb.screenSize();
+        if (!this.deviceSize) this.deviceSize = reported;
+        this.run.log(`Device reports ${reported.width}x${reported.height}; taps use the screenshot's own size.`);
       } catch (e) {
         this.run.log(`Could not read the screen size: ${e.message}`, 'warn');
       }

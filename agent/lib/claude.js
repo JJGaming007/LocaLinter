@@ -118,14 +118,20 @@ const PRICING = {
   'claude-haiku-4-5': { input: 1, output: 5 },
 };
 
-function priceFor(model) {
+function priceFor(model, baseUrl) {
+  // Behind a gateway the published rates do not apply — report tokens and let
+  // the run say `priced: false` rather than invent a number.
+  if (baseUrl) return null;
   return PRICING[model] || null;
 }
 
 class ClaudeAnalyzer {
-  constructor({ apiKey, model = 'claude-opus-5', effort = 'high' }) {
+  constructor({ apiKey, model = 'claude-opus-5', effort = 'high', baseUrl = '' }) {
     if (!apiKey) throw new Error('No Anthropic API key configured.');
-    this.client = new Anthropic({ apiKey });
+    // A base URL points the SDK at a company gateway (LiteLLM and friends)
+    // that speaks the same /v1/messages format. Empty means Anthropic direct.
+    this.client = new Anthropic({ apiKey, ...(baseUrl ? { baseURL: baseUrl } : {}) });
+    this.baseUrl = baseUrl || '';
     this.model = model;
     this.effort = effort;
     this.usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0, costUSD: 0, priced: true };
@@ -175,7 +181,7 @@ class ClaudeAnalyzer {
     this.usage.cacheRead += cacheRead;
     this.usage.cacheWrite += cacheWrite;
 
-    const price = priceFor(this.model);
+    const price = priceFor(this.model, this.baseUrl);
     if (!price) {
       // Unknown model: report tokens, but never invent a dollar figure.
       this.usage.priced = false;

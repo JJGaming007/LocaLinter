@@ -716,6 +716,8 @@
                   <select id="ds-model">
                     <option value="claude-opus-5">Claude Opus 5 (most thorough)</option>
                     <option value="claude-sonnet-5">Claude Sonnet 5 (faster, cheaper)</option>
+                    <option value="claude-opus">claude-opus (via gateway)</option>
+                    <option value="claude-sonnet">claude-sonnet (via gateway)</option>
                   </select>
                 </div>
                 <div class="ds-field">
@@ -726,6 +728,10 @@
                     <option value="medium">Medium</option>
                     <option value="low">Low</option>
                   </select>
+                </div>
+                <div class="ds-field">
+                  <label for="ds-base-url">Model endpoint <span class="ds-opt">(blank = Anthropic direct)</span></label>
+                  <input type="text" id="ds-base-url" placeholder="https://litellm-proxy.example.com" spellcheck="false" />
                 </div>
                 <div class="ds-field">
                   <label for="ds-adb-path">ADB path <span class="ds-opt">(optional)</span></label>

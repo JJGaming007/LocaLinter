@@ -8,6 +8,7 @@ const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
 const DEFAULTS = {
   // Claude
   apiKey: '',                       // falls back to process.env.ANTHROPIC_API_KEY
+  baseUrl: '',                      // '' => api.anthropic.com; set for a company gateway
   model: 'claude-opus-5',
   effort: 'high',                   // low | medium | high | xhigh | max
   visionEnabled: true,              // run the Claude vision pass per screen

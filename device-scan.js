@@ -30,7 +30,7 @@
       'ds-mode', 'ds-device', 'ds-sheet', 'ds-language', 'ds-package', 'ds-route', 'ds-route-card', 'ds-probe', 'ds-start', 'ds-stop',
       'ds-advanced-toggle', 'ds-advanced', 'ds-probe-out', 'ds-agent-out', 'ds-target-status',
       'ds-max-screens', 'ds-max-actions', 'ds-max-depth', 'ds-model', 'ds-effort', 'ds-adb-path',
-      'ds-vision', 'ds-scroll', 'ds-longpress', 'ds-blocked',
+      'ds-vision', 'ds-scroll', 'ds-longpress', 'ds-blocked', 'ds-base-url',
       'ds-run-panel', 'ds-run-status', 'ds-stat-screens', 'ds-stat-actions', 'ds-stat-issues',
       'ds-stat-queue', 'ds-summary', 'ds-log', 'ds-results-panel', 'ds-findings',
       'ds-filter-severity', 'ds-filter-type', 'ds-filter-text', 'ds-export',
@@ -138,6 +138,7 @@
     if (c.model) el.dsModel.value = c.model;
     if (c.effort) el.dsEffort.value = c.effort;
     el.dsAdbPath.value = c.adbPath || '';
+    el.dsBaseUrl.value = c.baseUrl || '';
     el.dsPackage.value = c.androidPackage || '';
     el.dsMaxScreens.value = c.maxScreens;
     el.dsMaxActions.value = c.maxActions;
@@ -435,7 +436,7 @@
     try {
       await api('/api/config', {
         method: 'POST',
-        body: JSON.stringify({ adbPath: el.dsAdbPath.value.trim(), ...options() }),
+        body: JSON.stringify({ adbPath: el.dsAdbPath.value.trim(), baseUrl: el.dsBaseUrl.value.trim(), ...options() }),
       });
       const r = await api('/api/run/start', {
         method: 'POST',

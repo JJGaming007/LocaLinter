@@ -152,4 +152,12 @@ function hammingDistance(a, b) {
   return d;
 }
 
-module.exports = { decode, perceptualHash, hammingDistance };
+/** Width and height straight from the IHDR, without decoding the pixels. */
+function size(buffer) {
+  if (buffer.length < 24 || buffer[0] !== 0x89 || buffer.toString('ascii', 1, 4) !== 'PNG') {
+    throw new Error('not a PNG');
+  }
+  return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+}
+
+module.exports = { decode, size, perceptualHash, hammingDistance };
