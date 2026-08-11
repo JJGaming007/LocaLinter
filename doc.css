@@ -15,6 +15,7 @@
   margin-bottom: 1.75rem;
 }
 .doc-brand-name { font-family: var(--serif); font-size: 1.12rem; }
+.doc-brand .sb-mark { width: 26px; height: 26px; flex-basis: 26px; }
 
 .doc-title {
   font-family: var(--serif);

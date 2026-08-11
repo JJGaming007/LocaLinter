@@ -123,18 +123,16 @@ body {
   flex: 0 0 auto;
 }
 
+/* The product logo — stacked layers with a check, carried over from the
+   original site. Same mark in the sidebar, the landing page, and the
+   legal pages, so the branding matches the OAuth consent screen. */
 .sb-mark {
   width: 22px;
   height: 22px;
   flex: 0 0 22px;
-  display: grid;
-  place-items: center;
+  display: block;
   border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: #17110a;
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  font-weight: 700;
+  object-fit: contain;
 }
 
 .sb-wordmark {
@@ -1533,7 +1531,10 @@ html.pre-auth .auth-gate { display: none; }
   margin-bottom: auto;
 }
 
-.auth-gate-brand { display: flex; align-items: center; gap: 0.55rem; }
+.auth-gate-brand { display: flex; align-items: center; gap: 0.6rem; }
+
+/* The landing page is the app's public face, so the mark reads larger here. */
+.auth-gate-brand .sb-mark { width: 28px; height: 28px; flex-basis: 28px; }
 
 .auth-gate-wordmark {
   font-family: var(--serif);
