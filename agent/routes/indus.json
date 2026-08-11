@@ -1,0 +1,110 @@
+{
+  "$comment": "Hand-recorded route map for Indus, captured from a live scan session on 2026-08-11. Coordinates are normalised (0-1) against a landscape screen, so they survive a change of device resolution. The agent uses this to skip the guessing phase: it can drive straight to known screens, switch language, and recover from a stuck state instead of rediscovering all of it by vision.",
+  "app": {
+    "name": "Indus",
+    "packages": {
+      "dev": "com.indusgame.dev",
+      "staging": "com.indusgame.staging",
+      "prod": "com.indusgame.play"
+    },
+    "engine": "unity",
+    "orientation": "landscape",
+    "recordedOn": { "device": "vivo I2217", "resolution": [2400, 1080], "build": "1.12.0 #11424000" }
+  },
+
+  "capabilities": {
+    "accessibilityText": false,
+    "$comment": "uiautomator dump returns zero text nodes — Unity draws into a single SurfaceView. Every string must be read from pixels. True for dev, staging and prod alike, so no build variant gives a shortcut.",
+    "bridge": false
+  },
+
+  "recovery": {
+    "$comment": "EC-70001 'LOST CONNECTION' can strand the app on a modal that RETRY does not clear. A force-stop and relaunch reliably recovers it; observed once on dev.",
+    "detect": { "anyText": ["LOST CONNECTION", "EC-70001"] },
+    "steps": [
+      { "action": "shell", "cmd": "am force-stop {package}" },
+      { "action": "wait", "ms": 2000 },
+      { "action": "launch", "package": "{package}" },
+      { "action": "wait", "ms": 30000 }
+    ]
+  },
+
+  "screens": {
+    "lobby": {
+      "signature": { "anyText": ["PLAY", "INVENTORY", "WEAPONS", "ABILITIES", "STORE"] },
+      "controls": {
+        "settingsGear": [0.95, 0.048],
+        "play": [0.895, 0.905],
+        "inventory": [0.076, 0.932],
+        "weapons": [0.207, 0.932],
+        "abilities": [0.325, 0.932],
+        "store": [0.436, 0.932],
+        "missions": [0.115, 0.32],
+        "ranked": [0.115, 0.437]
+      }
+    },
+    "settings.general": {
+      "signature": { "anyText": ["BASIC SETTINGS", "ADS Mode", "PARAMÈTRES"] },
+      "controls": {
+        "tabGeneral": [0.088, 0.164],
+        "tabControls": [0.088, 0.237],
+        "tabGameplay": [0.088, 0.309],
+        "tabSensitivity": [0.088, 0.381],
+        "tabGraphics": [0.088, 0.453],
+        "tabAudio": [0.088, 0.526],
+        "tabAccount": [0.088, 0.596],
+        "tabAbout": [0.088, 0.669],
+        "back": [0.018, 0.075]
+      },
+      "scrollable": { "area": [0.58, 0.5], "swipe": { "from": [0.58, 0.74], "to": [0.58, 0.23] } },
+      "infoBadges": {
+        "$comment": "The '?' chips that open the flyout tooltips. Tap and long-press each; the tooltip is its own screen and carries text that appears nowhere else.",
+        "adsMode": [0.204, 0.267],
+        "quickChat": [0.204, 0.892],
+        "adsCameraRotation_afterScroll": [0.204, 0.328],
+        "aimAcceleration_afterScroll": [0.204, 0.432],
+        "aimSmoothing_afterScroll": [0.204, 0.537]
+      }
+    },
+    "settings.account": {
+      "signature": { "anyText": ["ACCOUNT SETTINGS", "PARAMÈTRES DU COMPTE", "Account ID"] },
+      "controls": {
+        "regionChange": [0.866, 0.662],
+        "languageChange": [0.866, 0.79],
+        "support": [0.857, 0.181]
+      }
+    },
+    "settings.languagePicker": {
+      "signature": { "anyText": ["SELECT LANGUAGE"] },
+      "$comment": "List scrolls; only the first four are visible without scrolling.",
+      "controls": {
+        "english": [0.357, 0.328],
+        "arabic": [0.357, 0.422],
+        "french": [0.357, 0.519],
+        "russian": [0.357, 0.613],
+        "confirm": [0.554, 0.756],
+        "cancel": [0.446, 0.756]
+      },
+      "scrollable": { "swipe": { "from": [0.5, 0.6], "to": [0.5, 0.35] } }
+    }
+  },
+
+  "procedures": {
+    "setLanguage": {
+      "$comment": "Language is per account, not per device locale — the device stays on India/en. Takes about 10s to apply and returns to the lobby.",
+      "from": "lobby",
+      "steps": [
+        { "tap": "lobby.settingsGear", "wait": 3000 },
+        { "tap": "settings.general.tabAccount", "wait": 2000 },
+        { "tap": "settings.account.languageChange", "wait": 3000 },
+        { "tap": "settings.languagePicker.{language}", "wait": 1000 },
+        { "tap": "settings.languagePicker.confirm", "wait": 12000 }
+      ]
+    }
+  },
+
+  "knownIssues": {
+    "$comment": "Do not report these as findings; they are known and accepted for this build.",
+    "arabic": "Arabic is not fully implemented in 1.12.0 — the whole UI renders as tofu boxes because the glyph atlas is missing. Skip Arabic entirely on this build."
+  }
+}
