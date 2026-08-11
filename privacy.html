@@ -37,7 +37,7 @@
     <div class="doc-callout">
       <p><strong>The short version.</strong> LocaLinter runs in your browser. Your spreadsheet content travels
         directly between your browser and Google's APIs — it is never stored on a LocaLinter server. Your Google
-        profile and access token live in your browser tab and are discarded when you close it. Nothing is sold,
+        profile and access token stay in your own browser and are cleared when you sign out. Nothing is sold,
         shared for advertising, or used to train any model.</p>
     </div>
 
@@ -61,7 +61,9 @@
       to the Google Sheets API on your behalf. It is not used for any other purpose.</p>
     <ul>
       <li><strong>Where it is stored.</strong> Your OAuth access token and basic profile are kept in your
-        browser's <code>sessionStorage</code>. They are cleared when you sign out or close the tab.</li>
+        browser's <code>localStorage</code>, so you stay signed in between visits on that browser. They are
+        cleared when you sign out. Google's access token itself expires about an hour after it is issued and is
+        renewed in the background while you have LocaLinter open.</li>
       <li><strong>Server storage.</strong> None. LocaLinter has no user database and no server-side session
         store. Spreadsheet requests go directly from your browser to <code>sheets.googleapis.com</code>.</li>
       <li><strong>Sharing.</strong> Google user data is not transferred to any third party, other than to Google
@@ -106,7 +108,8 @@
     <ul>
       <li><strong>Sign out</strong> revokes the OAuth access token with Google and clears your token and profile
         from the tab.</li>
-      <li><strong>Closing the tab</strong> discards your session automatically.</li>
+      <li><strong>Using a different browser or device</strong> means a fresh sign-in; the session is stored
+        per browser and never on a server.</li>
       <li><strong>Clearing site data</strong> in your browser removes cached sheet data and preferences.</li>
       <li>You can revoke LocaLinter's access to your Google account at any time from
         <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">your Google account
@@ -117,7 +120,8 @@
 
     <h2>Security</h2>
     <p>All traffic is served over HTTPS. Access tokens are short-lived, scoped to the permissions listed above,
-      and held only in tab-scoped storage. Access to the tool is limited to your company Google Workspace domain.</p>
+      and held only in your browser's local storage. Access to the tool is limited to your company Google
+      Workspace domain.</p>
 
     <h2>Children</h2>
     <p>LocaLinter is an internal workplace tool and is not directed to, or intended for use by, anyone under 16.</p>

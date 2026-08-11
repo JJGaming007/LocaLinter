@@ -441,8 +441,15 @@ window.addEventListener('DOMContentLoaded', () => {
   const gateSignInBtn = document.getElementById('gate-signin-btn');
   const gateStatus = document.getElementById('gate-status');
   const SHEETS_SCOPE = 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/spreadsheets';
-  const TOKEN_STORAGE_KEY = 'localinter_gsheet_token_v3';
-  const USER_STORAGE_KEY = 'localinter_gsheet_user_v3';
+  // Sessions live in localStorage so closing a tab or restarting the browser
+  // does not sign you out. Google's access token still expires after an hour,
+  // so it is renewed silently in the background while the app is open.
+  const TOKEN_STORAGE_KEY = 'localinter_gsheet_token_v4';
+  const USER_STORAGE_KEY = 'localinter_gsheet_user_v4';
+  // Records that this browser has consented before, which is what makes a
+  // no-prompt renewal safe to attempt: without a prior grant it would pop a
+  // window the user never asked for.
+  const GRANT_STORAGE_KEY = 'localinter_gsheet_granted_v4';
 
   function getOAuthClientId() {
     const meta = document.querySelector('meta[name="google-oauth-client-id"]');
@@ -480,11 +487,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function loadStoredToken() {
     try {
-      const raw = sessionStorage.getItem(TOKEN_STORAGE_KEY);
+      const raw = localStorage.getItem(TOKEN_STORAGE_KEY);
       if (!raw) return null;
       const t = JSON.parse(raw);
       if (!t.access_token || !t.expires_at || Date.now() >= t.expires_at) {
-        sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
         return null;
       }
       return t;
@@ -492,23 +499,31 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   function storeToken(tok) {
-    sessionStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tok));
+    localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tok));
+    localStorage.setItem(GRANT_STORAGE_KEY, '1');
   }
 
-  function clearToken() {
-    sessionStorage.removeItem(TOKEN_STORAGE_KEY);
-    sessionStorage.removeItem(USER_STORAGE_KEY);
+  function hasPriorGrant() {
+    try { return localStorage.getItem(GRANT_STORAGE_KEY) === '1'; } catch { return false; }
+  }
+
+  // Signing out drops the grant flag too, so the next visit asks properly
+  // instead of silently signing the same person back in.
+  function clearToken({ forget = false } = {}) {
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    localStorage.removeItem(USER_STORAGE_KEY);
+    if (forget) localStorage.removeItem(GRANT_STORAGE_KEY);
   }
 
   function loadStoredUser() {
     try {
-      const raw = sessionStorage.getItem(USER_STORAGE_KEY);
+      const raw = localStorage.getItem(USER_STORAGE_KEY);
       return raw ? JSON.parse(raw) : null;
     } catch { return null; }
   }
 
   function storeUser(user) {
-    sessionStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
   }
 
   function getInitials(name, email) {
@@ -608,10 +623,13 @@ window.addEventListener('DOMContentLoaded', () => {
         return;
       }
       const allowed = getAllowedDomains();
+      // An empty prompt lets Google skip the consent screen for anyone who has
+      // already granted these scopes; it only asks when it genuinely needs to.
+      const prompt = silent || hasPriorGrant() ? '' : 'consent';
       const tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: clientId,
         scope: SHEETS_SCOPE,
-        prompt: silent ? '' : 'consent',
+        prompt,
         // Nudges the account chooser toward the work domain; the real check
         // happens below, since `hd` is only a hint and can be overridden.
         ...(allowed.length === 1 ? { hd: allowed[0] } : {}),
@@ -649,13 +667,30 @@ window.addEventListener('DOMContentLoaded', () => {
         },
         error_callback: (err) => reject(new Error(err && err.message ? err.message : 'Sign-in cancelled')),
       });
-      tokenClient.requestAccessToken({ prompt: silent ? '' : 'consent' });
+      tokenClient.requestAccessToken({ prompt });
     });
   }
 
-  function getValidToken() {
+  // Google's access tokens last about an hour, and the browser-side flow has
+  // no refresh token to lean on. Renewal is therefore only ever attempted
+  // from inside something the user started — a save, a sheet load, a click on
+  // the gate. A renewal fired on page load looks identical to Google, but
+  // when it cannot complete without UI it opens a window nobody asked for,
+  // which is worse than the sign-in it was trying to avoid.
+  async function renewSilently() {
+    if (!hasPriorGrant()) return null;
+    try {
+      return await requestAccessToken({ silent: true });
+    } catch {
+      return null;
+    }
+  }
+
+  async function getValidToken() {
     const cached = loadStoredToken();
-    if (cached) return Promise.resolve(cached);
+    if (cached) return cached;
+    const renewed = await renewSilently();
+    if (renewed) return renewed;
     return requestAccessToken({ silent: false });
   }
 
@@ -677,7 +712,7 @@ window.addEventListener('DOMContentLoaded', () => {
     return s;
   }
 
-  async function writeSheetCell({ spreadsheetId, sheetTitle, rowNum, colIndex, value }) {
+  async function writeSheetCell({ spreadsheetId, sheetTitle, rowNum, colIndex, value }, retry = true) {
     const token = await getValidToken();
     const a1 = `${sheetTitle}!${colIndexToA1(colIndex)}${rowNum}`;
     const res = await fetch(
@@ -692,6 +727,11 @@ window.addEventListener('DOMContentLoaded', () => {
       },
     );
     if (res.status === 401) {
+      // A token Google retired early: renew quietly and retry once before
+      // making this the user's problem.
+      if (retry && await renewSilently()) {
+        return writeSheetCell({ spreadsheetId, sheetTitle, rowNum, colIndex, value }, false);
+      }
       clearToken();
       updateAuthUI();
       throw new Error('Session expired. Please sign in again.');
@@ -723,11 +763,13 @@ window.addEventListener('DOMContentLoaded', () => {
     return res.json();
   }
 
-  async function sheetsApi(path, token) {
+  async function sheetsApi(path, token, retry = true) {
     const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets${path}`, {
       headers: { Authorization: `Bearer ${token.access_token}` },
     });
     if (res.status === 401) {
+      const renewed = retry ? await renewSilently() : null;
+      if (renewed) return sheetsApi(path, renewed, false);
       clearToken();
       updateAuthUI();
       throw new Error('Session expired. Please sign in again.');
@@ -1059,7 +1101,7 @@ window.addEventListener('DOMContentLoaded', () => {
   function doSignOut() {
     const tok = loadStoredToken();
     if (tok) revokeToken(tok.access_token);
-    clearToken();
+    clearToken({ forget: true });
     updateAuthUI();
     showToast('Signed out.');
   }
@@ -1101,26 +1143,36 @@ window.addEventListener('DOMContentLoaded', () => {
     else if (note) note.classList.add('hidden');
   })();
 
-  // Sign-in must come from a click (a token request on load trips popup
-  // blockers), so the gate only waits for Google's script to be ready.
   (async function prepareGate() {
-    if (loadStoredToken()) return;
     if (!getOAuthClientId()) {
       setGateStatus('Google OAuth Client ID is not configured.', true);
       gateSignInBtn.disabled = true;
       return;
     }
+
+    if (loadStoredToken()) return;
+
     gateSignInBtn.disabled = true;
     setGateStatus('Loading Google sign-in…');
     for (let i = 0; i < 50 && !(window.google && google.accounts && google.accounts.oauth2); i++) {
       await new Promise(r => setTimeout(r, 100));
     }
-    if (window.google && google.accounts && google.accounts.oauth2) {
-      gateSignInBtn.disabled = false;
-      setGateStatus('Your session lasts until you close this tab.');
-    } else {
+    if (!(window.google && google.accounts && google.accounts.oauth2)) {
       setGateStatus('Could not reach Google sign-in. Check your connection and reload.', true);
+      return;
     }
+
+    // Someone whose hour-old token lapsed has already consented, so the click
+    // ahead costs them one press and no consent screen. Name them, so the
+    // gate reads as resuming rather than starting over.
+    const returning = hasPriorGrant() ? loadStoredUser() : null;
+    if (returning && returning.email) {
+      gateSignInBtn.querySelector('span').textContent = `Continue as ${returning.email}`;
+      setGateStatus('Your session timed out. One click puts you back — no consent screen.');
+    } else {
+      setGateStatus('You stay signed in on this browser until you sign out.');
+    }
+    gateSignInBtn.disabled = false;
   })();
 
   // Initial load check
