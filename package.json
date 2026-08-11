@@ -1,7 +1,8 @@
 {
   "scripts": {
-    "dev": "npx --yes http-server -p 8787 -c-1 .",
-    "dev:api": "npx --yes vercel dev --listen 8787"
+    "dev": "npx --yes http-server -p 3000 -c-1 .",
+    "dev:alt": "npx --yes http-server -p 3001 -c-1 .",
+    "dev:api": "npx --yes vercel dev --listen 3000"
   },
   "dependencies": {
     "xlsx": "^0.18.5"
