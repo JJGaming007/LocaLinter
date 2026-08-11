@@ -1096,9 +1096,9 @@ window.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('gate-domain');
     if (!el) return;
     const allowed = getAllowedDomains();
+    const note = el.closest('.auth-gate-domain-note');
     if (allowed.length) el.textContent = allowed.map(d => '@' + d).join(' or ');
-    else el.closest('.auth-gate-sub').textContent =
-      'LocaLinter reads and writes your localization sheets, so it needs a Google account before it can open.';
+    else if (note) note.classList.add('hidden');
   })();
 
   // Sign-in must come from a click (a token request on load trips popup

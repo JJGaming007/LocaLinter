@@ -1497,16 +1497,20 @@ body.sb-collapsed .qt-panel { left: calc(var(--sidebar-w) + 1rem); }
 }
 
 /* ============================================================
-   SIGN-IN GATE
-   Shown until a Google session exists; hides the app entirely.
+   LANDING PAGE / SIGN-IN GATE
+   Public homepage as well as the gate: it describes the app and
+   links the legal pages without a session, which Google OAuth
+   verification requires of the app's home page.
    ============================================================ */
 .auth-gate {
   position: fixed;
   inset: 0;
   z-index: 500;
-  display: grid;
-  place-items: center;
-  padding: 2rem 1.25rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 1.25rem 2rem;
   background:
     radial-gradient(1100px 600px at 50% -10%, rgba(217, 138, 61, 0.09), transparent 65%),
     var(--bg);
@@ -1518,24 +1522,18 @@ body.gated { overflow: hidden; }
    never flashes before main.js runs. Cleared as soon as setGated() takes over. */
 html.pre-auth .auth-gate { display: none; }
 
-.auth-gate-card {
+.auth-gate-topbar {
   width: 100%;
-  max-width: 400px;
-  padding: 2.25rem 2rem 1.75rem;
-  background: var(--panel);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  text-align: center;
-}
-
-.auth-gate-brand {
+  max-width: 560px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.55rem;
-  margin-bottom: 1.5rem;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 0;
+  margin-bottom: auto;
 }
+
+.auth-gate-brand { display: flex; align-items: center; gap: 0.55rem; }
 
 .auth-gate-wordmark {
   font-family: var(--serif);
@@ -1543,19 +1541,94 @@ html.pre-auth .auth-gate { display: none; }
   letter-spacing: -0.01em;
 }
 
+.auth-gate-topnav { display: flex; gap: 1.1rem; }
+
+.auth-gate-topnav a {
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color var(--transition);
+}
+.auth-gate-topnav a:hover { color: var(--text); }
+
+.auth-gate-card {
+  width: 100%;
+  max-width: 560px;
+  padding: 2.25rem 2rem 1.75rem;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  margin: 1.5rem 0;
+}
+
 .auth-gate-title {
   font-family: var(--serif);
-  font-size: 1.45rem;
+  font-size: 1.75rem;
   font-weight: 500;
-  letter-spacing: -0.015em;
-  margin-bottom: 0.5rem;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  margin-bottom: 0.75rem;
 }
 
 .auth-gate-sub {
   color: var(--text-2);
-  font-size: 0.875rem;
+  font-size: 0.9rem;
+  line-height: 1.65;
+  margin-bottom: 1.5rem;
+}
+
+.auth-gate-features {
+  list-style: none;
+  display: grid;
+  gap: 0.85rem;
+  padding: 1.25rem 0;
+  margin-bottom: 1.25rem;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.auth-gate-features li {
+  font-size: 0.83rem;
   line-height: 1.6;
-  margin-bottom: 1.6rem;
+  color: var(--muted);
+  padding-left: 0.9rem;
+  border-left: 1px solid var(--border-strong);
+}
+
+.auth-gate-features strong {
+  display: block;
+  color: var(--text);
+  font-weight: 500;
+  font-size: 0.87rem;
+  margin-bottom: 0.1rem;
+}
+
+.auth-gate-scopes { margin-bottom: 1.5rem; }
+
+.auth-gate-scopes h2 {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+.auth-gate-scopes p {
+  font-size: 0.83rem;
+  line-height: 1.65;
+  color: var(--muted);
+}
+
+.auth-gate-scopes a { color: var(--text-2); text-decoration: underline; text-underline-offset: 2px; }
+.auth-gate-scopes a:hover { color: var(--text); }
+
+.auth-gate-domain-note {
+  font-size: 0.83rem;
+  color: var(--text-2);
+  margin-bottom: 0.85rem;
 }
 
 .auth-gate-btn {
@@ -1564,7 +1637,7 @@ html.pre-auth .auth-gate { display: none; }
   align-items: center;
   justify-content: center;
   gap: 0.6rem;
-  padding: 0.7rem 1rem;
+  padding: 0.75rem 1rem;
   font-family: var(--font);
   font-size: 0.9rem;
   font-weight: 500;
@@ -1584,10 +1657,11 @@ html.pre-auth .auth-gate { display: none; }
 .auth-gate-btn:disabled { opacity: 0.6; cursor: default; }
 
 .auth-gate-note {
-  margin-top: 1rem;
+  margin-top: 0.85rem;
   font-size: 0.775rem;
   color: var(--muted);
   min-height: 1.2em;
+  text-align: center;
 }
 
 .auth-gate-note.error { color: var(--danger); }
@@ -1607,6 +1681,7 @@ html.pre-auth .auth-gate { display: none; }
   font-size: 0.75rem;
   line-height: 1.6;
   color: var(--faint);
+  text-align: center;
 }
 
 .auth-gate-legal a {
@@ -1617,3 +1692,31 @@ html.pre-auth .auth-gate { display: none; }
 }
 
 .auth-gate-legal a:hover { color: var(--text-2); }
+
+.auth-gate-footer {
+  width: 100%;
+  max-width: 560px;
+  margin-top: auto;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  font-size: 0.75rem;
+  color: var(--faint);
+}
+
+.auth-gate-footer-links { display: flex; gap: 1rem; }
+
+.auth-gate-footer a {
+  color: var(--muted);
+  text-decoration: none;
+  transition: color var(--transition);
+}
+.auth-gate-footer a:hover { color: var(--text); }
+
+@media (max-width: 600px) {
+  .auth-gate-card { padding: 1.75rem 1.25rem 1.5rem; }
+  .auth-gate-title { font-size: 1.45rem; }
+}

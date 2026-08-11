@@ -39,17 +39,59 @@
   <!-- Toast container -->
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
-  <!-- ══ Sign-in gate — covers the app until a Google session exists ══ -->
-  <div class="auth-gate" id="auth-gate" role="dialog" aria-modal="true" aria-labelledby="auth-gate-title">
-    <div class="auth-gate-card">
+  <!-- ══ Landing page + sign-in gate ══
+       Doubles as the public homepage: it has to describe the app and link the
+       privacy policy without signing in, or Google OAuth verification fails
+       its branding check. Covers the app until a Google session exists. -->
+  <div class="auth-gate" id="auth-gate" aria-labelledby="auth-gate-title">
+    <header class="auth-gate-topbar">
       <div class="auth-gate-brand">
         <span class="sb-mark">L</span>
         <span class="auth-gate-wordmark">LocaLinter<span class="accent-text">.</span></span>
       </div>
-      <h1 class="auth-gate-title" id="auth-gate-title">Sign in to continue</h1>
-      <p class="auth-gate-sub">LocaLinter reads and writes your localization sheets, so it needs a Google
-        account before it can open. Sign in with your <strong class="auth-gate-domain"
-          id="gate-domain">@supergaming.com</strong> work account.</p>
+      <nav class="auth-gate-topnav" aria-label="About this app">
+        <a href="privacy.html">Privacy</a>
+        <a href="terms.html">Terms</a>
+      </nav>
+    </header>
+
+    <div class="auth-gate-card">
+      <h1 class="auth-gate-title" id="auth-gate-title">Localization QA for your Google Sheets</h1>
+      <p class="auth-gate-sub">LocaLinter is SuperGaming's localization validator. Point it at the Google Sheet
+        holding your game's translations and it flags formatting errors, missing locales, and variable
+        mismatches across every language at once — then writes the fixes you approve straight back to the
+        sheet.</p>
+
+      <ul class="auth-gate-features">
+        <li>
+          <strong>Format issues</strong>
+          Catches broken placeholders, stray tags, and spacing and punctuation problems in translated strings.
+        </li>
+        <li>
+          <strong>Missing locales</strong>
+          Shows which keys are still untranslated, per language, so nothing ships half-localized.
+        </li>
+        <li>
+          <strong>Search across languages</strong>
+          Finds any string in any locale and edits it in place, with changes synced back to the sheet.
+        </li>
+        <li>
+          <strong>Device scan</strong>
+          Optionally drives a build on a real device to catch text that overflows or truncates on screen.
+        </li>
+      </ul>
+
+      <div class="auth-gate-scopes">
+        <h2>What LocaLinter asks for</h2>
+        <p>Signing in with Google lets LocaLinter read your name, email, and profile picture to identify you,
+          and read and write the specific Google Sheet you choose to open. It never browses the rest of your
+          Drive, and it only writes to a sheet when you click save. Full detail is in the
+          <a href="privacy.html">Privacy Policy</a>.</p>
+      </div>
+
+      <p class="auth-gate-domain-note">Access is limited to <strong class="auth-gate-domain"
+          id="gate-domain">@supergaming.com</strong> work accounts.</p>
+
       <button id="gate-signin-btn" class="auth-gate-btn" type="button">
         <svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true">
           <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/>
@@ -65,6 +107,14 @@
         handles your data, described in the <a href="privacy.html">Privacy Policy</a>.
       </p>
     </div>
+
+    <footer class="auth-gate-footer">
+      <span>LocaLinter — operated by SuperGaming</span>
+      <span class="auth-gate-footer-links">
+        <a href="privacy.html">Privacy Policy</a>
+        <a href="terms.html">Terms of Service</a>
+      </span>
+    </footer>
   </div>
 
   <div class="app" id="app">
