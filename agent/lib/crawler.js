@@ -27,8 +27,13 @@ function safeRegexes(patterns) {
  * info button is explored exactly like navigating to a new menu.
  */
 class Crawler {
-  constructor({ cfg, adb, bridge, sheet, analyzer, run, target }) {
+  constructor({ cfg, adb, bridge, sheet, analyzer, run, target, route }) {
     this.cfg = cfg;
+    this.route = route || null;
+    this.routeScreens = (route && route.screens) || {};
+    this.observedText = new Map();     // screenId -> strings read off that screen
+    this.routeScreenFor = new Map();   // screenId -> name in the route map
+    this.recoveries = 0;
     this.adb = adb;
     this.bridge = bridge;
     this.sheet = sheet;
@@ -186,7 +191,170 @@ class Crawler {
       actions.sort((a, b) => (a.priority === 'high' ? -1 : 1) - (b.priority === 'high' ? -1 : 1));
     }
 
+    // Anything the route map already knows about this screen goes first, and
+    // wins over a guessed tap at roughly the same spot.
+    const fromRoute = this.routeActionsFor(screenId);
+    if (fromRoute.length) {
+      const near = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) < 40 && a.kind === b.kind;
+      const kept = actions.filter((a) => !fromRoute.some((r) => near(a, r)));
+      this.run.log(`Route map contributed ${fromRoute.length} known controls on ${screenId}.`);
+      return [...fromRoute, ...kept];
+    }
+
     return actions;
+  }
+
+  // ── route map ──────────────────────────────────────────────────────────
+  // A route map is what an earlier pass worked out about this game. Using it
+  // means the crawl does not have to rediscover where the settings tabs and
+  // info badges are on every run, and can recognise a stuck state instead of
+  // tapping at a modal until it runs out of budget.
+
+  /** Normalised route coordinates -> device pixels. */
+  routePoint(pair) {
+    const size = this.deviceSize || { width: 1080, height: 1920 };
+    if (!Array.isArray(pair) || pair.length !== 2) return null;
+    const x = Number(pair[0]) * size.width;
+    const y = Number(pair[1]) * size.height;
+    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+  }
+
+  /** Which known screen are we looking at, judged by the strings on it. */
+  identifyRouteScreen(texts) {
+    if (!texts || !texts.length) return null;
+    const hay = texts.map((t) => String(t).toLowerCase());
+    // Score rather than take the first hit: one screen's marker can be a
+    // substring of another's ("PARAMÈTRES" sits inside "PARAMÈTRES DU
+    // COMPTE"), and the longest, most-matched signature is the right screen.
+    let best = null;
+    for (const [name, def] of Object.entries(this.routeScreens)) {
+      const wanted = (def.signature && def.signature.anyText) || [];
+      let score = 0;
+      for (const w of wanted) {
+        const needle = String(w).toLowerCase();
+        if (!needle) continue;
+        if (hay.some((h) => h === needle)) score += needle.length * 2;   // exact line
+        else if (hay.some((h) => h.includes(needle))) score += needle.length;
+      }
+      if (score > 0 && (!best || score > best.score)) best = { name, def, score };
+    }
+    return best ? { name: best.name, def: best.def } : null;
+  }
+
+  /** Taps the route already knows about, so they are not left to guesswork. */
+  routeActionsFor(screenId) {
+    const match = this.routeScreenFor.get(screenId);
+    if (!match) return [];
+    const { name, def } = match;
+    const out = [];
+
+    for (const [label, pair] of Object.entries(def.controls || {})) {
+      const p = this.routePoint(pair);
+      if (!p) continue;
+      if (this.isBlocked(label)) {
+        this.run.skipped.push({ screenId, label, reason: 'matches a blocked-label pattern' });
+        continue;
+      }
+      out.push({
+        key: `tap:${name}.${label}:${Math.round(p.x)},${Math.round(p.y)}`,
+        kind: 'tap', x: p.x, y: p.y, label: `${name}.${label}`, priority: 'high', fromRoute: true,
+      });
+    }
+
+    // Info badges are the whole point of recording a route: the tooltips they
+    // open carry text that appears on no other screen, and a crawler working
+    // from a screenshot rarely guesses that a small "?" chip is worth a tap.
+    for (const [label, pair] of Object.entries(def.infoBadges || {})) {
+      const p = this.routePoint(pair);
+      if (!p) continue;
+      out.push({
+        key: `tap:${name}.badge.${label}:${Math.round(p.x)},${Math.round(p.y)}`,
+        kind: 'tap', x: p.x, y: p.y, label: `${name} info: ${label}`, priority: 'high', fromRoute: true,
+      });
+      if (this.cfg.longPressProbe) {
+        out.push({
+          key: `long_press:${name}.badge.${label}:${Math.round(p.x)},${Math.round(p.y)}`,
+          kind: 'long_press', x: p.x, y: p.y, label: `${name} info held: ${label}`, priority: 'high', fromRoute: true,
+        });
+      }
+    }
+    return out;
+  }
+
+  /** The app strands itself sometimes; the route says how to get it back. */
+  async maybeRecover(texts) {
+    const rec = this.route && this.route.recovery;
+    if (!rec || !this.adb || this.recoveries >= 2) return false;
+    const wanted = (rec.detect && rec.detect.anyText) || [];
+    const hay = (texts || []).map((t) => String(t).toLowerCase());
+    const stuck = wanted.some((w) => hay.some((h) => h.includes(String(w).toLowerCase())));
+    if (!stuck) return false;
+
+    const pkg = this.cfg.androidPackage;
+    if (!pkg) {
+      this.run.warnings.push('Hit a state the route map calls stuck, but no Android package is set, so it could not restart the app.');
+      return false;
+    }
+    this.recoveries++;
+    this.run.log(`Route map recognised a stuck state — restarting ${pkg}.`, 'warn');
+    this.run.warnings.push(`Recovered from a stuck state (${wanted.join(', ')}) by restarting the app.`);
+    for (const step of rec.steps || []) {
+      try {
+        if (step.action === 'shell') await this.adb.shell(String(step.cmd).replace('{package}', pkg));
+        else if (step.action === 'launch') await this.adb.shell(`monkey -p ${pkg} -c android.intent.category.LAUNCHER 1`);
+        else if (step.action === 'wait') await sleep(Number(step.ms) || 1000);
+      } catch (e) {
+        this.run.log(`Recovery step failed: ${e.message}`, 'warn');
+      }
+    }
+    return true;
+  }
+
+  /** Put the game into the language the sheet column is being checked against. */
+  async applyRouteLanguage() {
+    const proc = this.route && this.route.procedures && this.route.procedures.setLanguage;
+    if (!proc || !this.adb) return false;
+
+    const picker = this.routeScreens['settings.languagePicker'];
+    const wanted = String(this.target.header || '').trim().toLowerCase();
+    const control = picker && Object.keys(picker.controls || {})
+      .find((k) => k.toLowerCase() === wanted || wanted.startsWith(k.toLowerCase()));
+    if (!control) {
+      this.run.log(`Route map has no language option matching "${this.target.header}" — leaving the game's language alone.`, 'warn');
+      return false;
+    }
+
+    this.run.log(`Setting the game's language to ${this.target.header} using the route map.`);
+    for (const step of proc.steps || []) {
+      if (this.run.stopRequested) return false;
+      const ref = String(step.tap || '').replace('{language}', control);
+      const point = this.resolveRef(ref);
+      if (!point) {
+        this.run.log(`Route step "${ref}" does not resolve — stopping the language switch.`, 'warn');
+        return false;
+      }
+      try {
+        await this.tapAt(point.x, point.y);
+      } catch (e) {
+        this.run.log(`Route step "${ref}" failed: ${e.message}`, 'warn');
+        return false;
+      }
+      await sleep(Number(step.wait) || this.cfg.settleMs);
+    }
+    this.run.log('Language switch done.');
+    return true;
+  }
+
+  /** "settings.account.languageChange" -> a point on screen. */
+  resolveRef(ref) {
+    const parts = String(ref).split('.');
+    if (parts.length < 2) return null;
+    const key = parts.pop();
+    const screen = parts.join('.');
+    const def = this.routeScreens[screen];
+    if (!def) return null;
+    const pair = (def.controls && def.controls[key]) || (def.infoBadges && def.infoBadges[key]);
+    return pair ? this.routePoint(pair) : null;
   }
 
   async perform(action) {
@@ -354,6 +522,20 @@ class Crawler {
       }
     }
 
+    // Remember what this screen said. The route map is matched against it, and
+    // a stuck state is recognised the same way.
+    const seen = [
+      ...extracted.map((t) => t.text),
+      ...((vision.unlisted_text || []).map((t) => (typeof t === 'string' ? t : t && t.text))),
+    ].filter(Boolean);
+    this.observedText.set(screenId, seen);
+    const known = this.identifyRouteScreen(seen);
+    if (known) {
+      this.routeScreenFor.set(screenId, known);
+      this.run.log(`Route map recognises ${screenId} as "${known.name}".`);
+    }
+    await this.maybeRecover(seen);
+
     // 4. strings only the model could see get the same sheet treatment
     const aiStatic = [];
     if (vision.unlisted_text && vision.unlisted_text.length) {
@@ -509,6 +691,14 @@ class Crawler {
         this.run.log(`Device screen: ${this.deviceSize.width}x${this.deviceSize.height}`);
       } catch (e) {
         this.run.log(`Could not read the screen size: ${e.message}`, 'warn');
+      }
+    }
+
+    if (this.route && this.cfg.routeSetLanguage !== false) {
+      try {
+        await this.applyRouteLanguage();
+      } catch (e) {
+        this.run.log(`Could not apply the route's language switch: ${e.message}`, 'warn');
       }
     }
 

@@ -216,7 +216,7 @@ function pickOverrides(options) {
   for (const k of numeric) {
     if (options[k] != null && Number.isFinite(Number(options[k]))) out[k] = Number(options[k]);
   }
-  for (const k of ['visionEnabled', 'scrollProbe', 'longPressProbe']) {
+  for (const k of ['visionEnabled', 'scrollProbe', 'longPressProbe', 'routeSetLanguage']) {
     if (typeof options[k] === 'boolean') out[k] = options[k];
   }
   for (const k of ['androidPackage', 'model', 'effort']) {
@@ -310,6 +310,7 @@ async function startScan({ run, cfg, sheet, target, mode, serial, route }) {
     sheet,
     analyzer,
     run,
+    route,
     target: {
       header: target.header,
       code: target.code,

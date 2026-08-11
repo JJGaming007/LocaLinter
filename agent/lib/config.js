@@ -43,6 +43,10 @@ const DEFAULTS = {
   scrollProbe: true,
   scrollSteps: 4,
 
+  // Drive the route map's language procedure before crawling, so the game is
+  // in the language the sheet column is being checked against.
+  routeSetLanguage: true,
+
   // Android app under test (used to restart when backtracking fails)
   androidPackage: '',
 };
