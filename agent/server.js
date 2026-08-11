@@ -278,8 +278,16 @@ async function startScan({ run, cfg, sheet, target, mode, serial, route }) {
       `No bridge on 127.0.0.1:${cfg.bridgePort}. Add LocaLinterBridge.cs to the Unity project and enter Play Mode.`
     );
   } else {
-    run.log('No in-game bridge — falling back to screenshots plus vision. Add LocaLinterBridge.cs to the build for exact strings and far better coverage.', 'warn');
-    run.warnings.push('Ran without the in-game bridge: strings were read from screenshots, so truncation and overflow are judged visually rather than measured.');
+    // When the route map records that this game ships without the bridge, that
+    // is a settled decision, not a defect — say so once and move on. Nagging
+    // about it on every run buries the findings that matter.
+    const bridgeExpected = !(route && route.capabilities && route.capabilities.bridge === false);
+    if (bridgeExpected) {
+      run.log('No in-game bridge — falling back to screenshots plus vision. Add LocaLinterBridge.cs to the build for exact strings and far better coverage.', 'warn');
+      run.warnings.push('Ran without the in-game bridge: strings were read from screenshots, so truncation and overflow are judged visually rather than measured.');
+    } else {
+      run.log('Reading strings from screenshots, as recorded for this game — truncation and overflow are judged visually rather than measured.');
+    }
   }
 
   // If the game exposes its locale, tell the operator when it disagrees with

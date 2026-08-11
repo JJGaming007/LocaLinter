@@ -47,6 +47,7 @@ function summarise({ name, data }) {
     screenNames: screens,
     infoBadges: badges,
     procedures: Object.keys(data.procedures || {}),
+    capabilities: data.capabilities || {},
     knownIssues: Object.entries(data.knownIssues || {})
       .filter(([k]) => k !== '$comment')
       .map(([k, v]) => ({ key: k, note: v })),

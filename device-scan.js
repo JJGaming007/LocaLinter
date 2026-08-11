@@ -407,8 +407,14 @@
         parts.push(`<div class="ds-msg ok">In-game bridge connected — ${escapeHtml(r.bridge.product || '')} ` +
           `(${escapeHtml(r.bridge.mode)}, Unity ${escapeHtml(r.bridge.unity || '?')}). Exact strings and rects are available.</div>`);
       } else {
-        parts.push('<div class="ds-msg warn">No in-game bridge. The scan will read text from screenshots instead — ' +
-          'add <code>agent/unity/LocaLinterBridge.cs</code> to the Unity project for exact strings, measured overflow and reliable clicking.</div>');
+        const rt = routeList.find((x) => x.name === el.dsRoute.value);
+        if (rt && rt.capabilities && rt.capabilities.bridge === false) {
+          parts.push('<div class="ds-msg">Reading text from screenshots, as recorded for ' +
+            `${escapeHtml(rt.label)}. Truncation and overflow are judged visually.</div>`);
+        } else {
+          parts.push('<div class="ds-msg warn">No in-game bridge. The scan will read text from screenshots instead — ' +
+            'add <code>agent/unity/LocaLinterBridge.cs</code> to the Unity project for exact strings, measured overflow and reliable clicking.</div>');
+        }
       }
       for (const e of r.errors || []) parts.push(`<div class="ds-msg warn">${escapeHtml(e)}</div>`);
       el.dsProbeOut.innerHTML = parts.join('');
