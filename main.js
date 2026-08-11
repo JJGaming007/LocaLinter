@@ -436,6 +436,10 @@ window.addEventListener('DOMContentLoaded', () => {
   const accountMenuName = document.getElementById('account-menu-name');
   const accountMenuEmail = document.getElementById('account-menu-email');
   const accountSignOutBtn = document.getElementById('account-signout-btn');
+  const appShell = document.getElementById('app');
+  const authGate = document.getElementById('auth-gate');
+  const gateSignInBtn = document.getElementById('gate-signin-btn');
+  const gateStatus = document.getElementById('gate-status');
   const SHEETS_SCOPE = 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/spreadsheets';
   const TOKEN_STORAGE_KEY = 'localinter_gsheet_token_v3';
   const USER_STORAGE_KEY = 'localinter_gsheet_user_v3';
@@ -443,6 +447,35 @@ window.addEventListener('DOMContentLoaded', () => {
   function getOAuthClientId() {
     const meta = document.querySelector('meta[name="google-oauth-client-id"]');
     return meta ? (meta.getAttribute('content') || '').trim() : '';
+  }
+
+  function getAllowedDomains() {
+    const meta = document.querySelector('meta[name="google-allowed-domains"]');
+    const raw = meta ? (meta.getAttribute('content') || '') : '';
+    return raw.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
+  }
+
+  // Workspace accounts carry an `hd` claim; fall back to the email's domain
+  // for anything that doesn't (personal accounts, which are rejected anyway).
+  function isAllowedUser(user) {
+    const allowed = getAllowedDomains();
+    if (!allowed.length) return true;
+    if (!user || !user.email || user.email_verified === false) return false;
+    const domain = (user.hd || user.email.split('@')[1] || '').toLowerCase();
+    return allowed.includes(domain);
+  }
+
+  function domainRejectionMessage() {
+    const allowed = getAllowedDomains();
+    const list = allowed.length > 1
+      ? allowed.slice(0, -1).join(', ') + ' or ' + allowed[allowed.length - 1]
+      : allowed[0];
+    return `Only @${list} accounts can use LocaLinter. Sign in with your work account.`;
+  }
+
+  function revokeToken(accessToken) {
+    if (!accessToken) return;
+    try { google.accounts.oauth2.revoke(accessToken, () => {}); } catch { /* best effort */ }
   }
 
   function loadStoredToken() {
@@ -502,10 +535,32 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // The app stays behind the gate until Google hands back a session.
+  function setGated(gated) {
+    document.documentElement.classList.remove('pre-auth');
+    authGate.classList.toggle('hidden', !gated);
+    document.body.classList.toggle('gated', gated);
+    if (gated) appShell.setAttribute('inert', ''); else appShell.removeAttribute('inert');
+  }
+
+  function setGateStatus(msg, isError = false) {
+    gateStatus.textContent = msg;
+    gateStatus.classList.toggle('error', isError);
+  }
+
   function updateAuthUI() {
-    const tok = loadStoredToken();
-    const user = loadStoredUser();
+    let tok = loadStoredToken();
+    let user = loadStoredUser();
+    // A stored session from outside the allowed domain (stale storage, or the
+    // domain list changed) is dropped rather than trusted.
+    if (tok && !isAllowedUser(user)) {
+      revokeToken(tok.access_token);
+      clearToken();
+      tok = null;
+      user = null;
+    }
     const authRow = document.querySelector('.gsheet-auth-row');
+    setGated(!tok);
     if (tok && user) {
       if (authRow) authRow.classList.add('signed-in');
       gsheetSignInBtn.classList.add('hidden');
@@ -532,7 +587,13 @@ window.addEventListener('DOMContentLoaded', () => {
     });
     if (!res.ok) throw new Error('Failed to fetch user profile.');
     const data = await res.json();
-    return { name: data.name, email: data.email, picture: data.picture };
+    return {
+      name: data.name,
+      email: data.email,
+      picture: data.picture,
+      hd: data.hd,
+      email_verified: data.email_verified,
+    };
   }
 
   function requestAccessToken({ silent = false } = {}) {
@@ -546,10 +607,14 @@ window.addEventListener('DOMContentLoaded', () => {
         reject(new Error('Google Identity Services not loaded yet. Try again in a moment.'));
         return;
       }
+      const allowed = getAllowedDomains();
       const tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: clientId,
         scope: SHEETS_SCOPE,
         prompt: silent ? '' : 'consent',
+        // Nudges the account chooser toward the work domain; the real check
+        // happens below, since `hd` is only a hint and can be overridden.
+        ...(allowed.length === 1 ? { hd: allowed[0] } : {}),
         callback: async (response) => {
           if (response.error) {
             reject(new Error(response.error_description || response.error));
@@ -559,11 +624,26 @@ window.addEventListener('DOMContentLoaded', () => {
             access_token: response.access_token,
             expires_at: Date.now() + (Number(response.expires_in || 3600) - 60) * 1000,
           };
-          storeToken(tok);
+          let user;
           try {
-            const user = await fetchUserInfo(tok.access_token);
-            storeUser(user);
-          } catch { /* avatar/profile is optional */ }
+            user = await fetchUserInfo(tok.access_token);
+          } catch {
+            // Without a profile the domain can't be verified, so refuse.
+            revokeToken(tok.access_token);
+            clearToken();
+            updateAuthUI();
+            reject(new Error('Could not verify your Google account. Try again.'));
+            return;
+          }
+          if (!isAllowedUser(user)) {
+            revokeToken(tok.access_token);
+            clearToken();
+            updateAuthUI();
+            reject(new Error(domainRejectionMessage()));
+            return;
+          }
+          storeToken(tok);
+          storeUser(user);
           updateAuthUI();
           resolve(tok);
         },
@@ -961,14 +1041,24 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   async function doSignIn() {
-    try { await requestAccessToken({ silent: false }); showToast('Signed in to Google.'); }
-    catch (e) { showToast(e.message || 'Sign-in failed.', 'error'); }
+    const gated = !authGate.classList.contains('hidden');
+    if (gated) {
+      gateSignInBtn.disabled = true;
+      setGateStatus('Opening Google…');
+    }
+    try {
+      await requestAccessToken({ silent: false });
+      showToast('Signed in to Google.');
+    } catch (e) {
+      if (gated) setGateStatus(e.message || 'Sign-in failed. Try again.', true);
+      else showToast(e.message || 'Sign-in failed.', 'error');
+    } finally {
+      gateSignInBtn.disabled = false;
+    }
   }
   function doSignOut() {
     const tok = loadStoredToken();
-    if (tok && window.google && google.accounts && google.accounts.oauth2) {
-      try { google.accounts.oauth2.revoke(tok.access_token, () => {}); } catch {}
-    }
+    if (tok) revokeToken(tok.access_token);
     clearToken();
     updateAuthUI();
     showToast('Signed out.');
@@ -976,6 +1066,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   gsheetSignInBtn.addEventListener('click', doSignIn);
   headerSignInBtn.addEventListener('click', doSignIn);
+  gateSignInBtn.addEventListener('click', doSignIn);
   accountSignOutBtn.addEventListener('click', () => {
     accountMenu.classList.add('hidden');
     accountBtn.setAttribute('aria-expanded', 'false');
@@ -999,6 +1090,38 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
   updateAuthUI();
+
+  // Keep the gate's copy in step with the allowed-domain meta tag.
+  (function labelGateDomain() {
+    const el = document.getElementById('gate-domain');
+    if (!el) return;
+    const allowed = getAllowedDomains();
+    if (allowed.length) el.textContent = allowed.map(d => '@' + d).join(' or ');
+    else el.closest('.auth-gate-sub').textContent =
+      'LocaLinter reads and writes your localization sheets, so it needs a Google account before it can open.';
+  })();
+
+  // Sign-in must come from a click (a token request on load trips popup
+  // blockers), so the gate only waits for Google's script to be ready.
+  (async function prepareGate() {
+    if (loadStoredToken()) return;
+    if (!getOAuthClientId()) {
+      setGateStatus('Google OAuth Client ID is not configured.', true);
+      gateSignInBtn.disabled = true;
+      return;
+    }
+    gateSignInBtn.disabled = true;
+    setGateStatus('Loading Google sign-in…');
+    for (let i = 0; i < 50 && !(window.google && google.accounts && google.accounts.oauth2); i++) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+    if (window.google && google.accounts && google.accounts.oauth2) {
+      gateSignInBtn.disabled = false;
+      setGateStatus('Your session lasts until you close this tab.');
+    } else {
+      setGateStatus('Could not reach Google sign-in. Check your connection and reload.', true);
+    }
+  })();
 
   // Initial load check
   loadFromDB((data) => {

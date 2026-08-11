@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — LocaLinter</title>
+  <meta name="description"
+    content="How LocaLinter handles Google account data, spreadsheet content, and the data it stores in your browser." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;450;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css?v=2.1" />
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <style>
+    .doc-wrap { max-width: 720px; margin: 0 auto; padding: 3rem 1.5rem 6rem; }
+
+    .doc-head { border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; margin-bottom: 2.5rem; }
+
+    .doc-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      color: inherit;
+      text-decoration: none;
+      margin-bottom: 1.75rem;
+    }
+    .doc-brand-name { font-family: var(--serif); font-size: 1.12rem; }
+
+    .doc-title {
+      font-family: var(--serif);
+      font-size: 2rem;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+    }
+
+    .doc-meta { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+
+    .doc-wrap h2 {
+      font-family: var(--serif);
+      font-size: 1.2rem;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+      margin: 2.5rem 0 0.75rem;
+    }
+
+    .doc-wrap p, .doc-wrap li { color: var(--text-2); font-size: 0.92rem; line-height: 1.7; }
+    .doc-wrap p { margin-bottom: 0.9rem; }
+    .doc-wrap ul { margin: 0 0 0.9rem 1.1rem; }
+    .doc-wrap li { margin-bottom: 0.4rem; }
+    .doc-wrap strong { color: var(--text); font-weight: 500; }
+    .doc-wrap a { color: var(--accent-hi); text-decoration: none; border-bottom: 1px solid var(--accent-line); }
+    .doc-wrap a:hover { color: var(--accent); }
+    .doc-wrap code {
+      font-family: var(--mono);
+      font-size: 0.82em;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 0.08em 0.32em;
+      color: var(--text);
+    }
+
+    .doc-callout {
+      background: var(--panel);
+      border: 1px solid var(--border-strong);
+      border-left: 2px solid var(--accent);
+      border-radius: var(--radius-md);
+      padding: 1rem 1.1rem;
+      margin: 1.25rem 0;
+    }
+    .doc-callout p:last-child { margin-bottom: 0; }
+
+    .doc-foot {
+      margin-top: 3.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+
+<body>
+  <main class="doc-wrap">
+    <header class="doc-head">
+      <a class="doc-brand" href="/">
+        <span class="sb-mark">L</span>
+        <span class="doc-brand-name">LocaLinter<span class="accent-text">.</span></span>
+      </a>
+      <h1 class="doc-title">Privacy Policy</h1>
+      <p class="doc-meta">Last updated: 11 August 2026</p>
+    </header>
+
+    <p>LocaLinter is an internal localization QA tool operated by SuperGaming for members of the
+      <code>supergaming.com</code> Google Workspace domain. It checks localization spreadsheets for formatting
+      errors, missing translations, and variable mismatches. This policy explains what data the tool touches,
+      where that data goes, and how long it is kept.</p>
+
+    <div class="doc-callout">
+      <p><strong>The short version.</strong> LocaLinter runs in your browser. Your spreadsheet content travels
+        directly between your browser and Google's APIs — it is never stored on a LocaLinter server. Your Google
+        profile and access token live in your browser tab and are discarded when you close it. Nothing is sold,
+        shared for advertising, or used to train any model.</p>
+    </div>
+
+    <h2>Who can use LocaLinter</h2>
+    <p>Sign-in is restricted to Google accounts on the <code>supergaming.com</code> domain. If you sign in with
+      any other account, the access token is revoked immediately and no data is retained.</p>
+
+    <h2>Google account data we access</h2>
+    <p>When you sign in with Google, LocaLinter requests these OAuth scopes:</p>
+    <ul>
+      <li><code>userinfo.email</code> and <code>userinfo.profile</code> — your email address, name, and profile
+        picture. These identify you in the app's account menu and enforce the domain restriction above.</li>
+      <li><code>spreadsheets</code> — read and write access to Google Sheets, used to load the localization sheet
+        you select and to save corrections you explicitly choose to write back.</li>
+    </ul>
+    <p>LocaLinter only opens the specific spreadsheet you load by URL or preset. It does not browse, index, or
+      enumerate your Drive, and it never writes to a sheet unless you click a save or sync control.</p>
+
+    <h2>How Google user data is used, stored, and shared</h2>
+    <p>Google account data is used solely to authenticate you, display who is signed in, and authorize requests
+      to the Google Sheets API on your behalf. It is not used for any other purpose.</p>
+    <ul>
+      <li><strong>Where it is stored.</strong> Your OAuth access token and basic profile are kept in your
+        browser's <code>sessionStorage</code>. They are cleared when you sign out or close the tab.</li>
+      <li><strong>Server storage.</strong> None. LocaLinter has no user database and no server-side session
+        store. Spreadsheet requests go directly from your browser to <code>sheets.googleapis.com</code>.</li>
+      <li><strong>Sharing.</strong> Google user data is not transferred to any third party, other than to Google
+        itself to service your requests. It is not sold, rented, or used for advertising, and it is not used to
+        develop, improve, or train generalized AI or machine learning models.</li>
+    </ul>
+    <p>LocaLinter's use and transfer of information received from Google APIs adheres to the
+      <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank"
+        rel="noopener">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+
+    <h2>Other data stored in your browser</h2>
+    <p>To keep the tool usable between visits, LocaLinter saves the following locally on your device. This data
+      never leaves your browser.</p>
+    <ul>
+      <li><strong>IndexedDB</strong> — the most recently loaded sheet, so results survive a page refresh.</li>
+      <li><strong>localStorage</strong> — preferences such as the active tab, search settings, ignore list,
+        text-wrap state, and Quick Translate language choices.</li>
+    </ul>
+    <p>Clearing your browser's site data for this domain removes all of it.</p>
+
+    <h2>Quick Translate</h2>
+    <p>The Quick Translate panel sends the text you type to a LocaLinter serverless endpoint
+      (<code>/api/translate</code>), which forwards it to Google's public translation endpoint and returns the
+      result. Only the text you enter and the chosen language pair are sent. The endpoint does not attach your
+      identity, and it does not log or store the text.</p>
+
+    <h2>Device scan</h2>
+    <p>Device scan is optional and only works if you run the LocaLinter agent yourself on your own machine. When
+      you do, the agent captures screenshots and on-screen strings from the device under test and sends them to
+      the Anthropic Claude API for analysis, using an API key you supply. That traffic goes from your machine to
+      Anthropic directly and is governed by
+      <a href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener">Anthropic's privacy
+        policy</a>. Do not point a scan at a screen showing personal or confidential data you would not want
+      sent to that service. If you never run the agent, no scan data is produced or transmitted.</p>
+
+    <h2>Analytics and cookies</h2>
+    <p>LocaLinter sets no advertising or tracking cookies and runs no third-party analytics. The only browser
+      storage it uses is described above. The hosting provider may keep standard server request logs for
+      operational and security purposes.</p>
+
+    <h2>Data retention and deletion</h2>
+    <ul>
+      <li><strong>Sign out</strong> revokes the OAuth access token with Google and clears your token and profile
+        from the tab.</li>
+      <li><strong>Closing the tab</strong> discards your session automatically.</li>
+      <li><strong>Clearing site data</strong> in your browser removes cached sheet data and preferences.</li>
+      <li>You can revoke LocaLinter's access to your Google account at any time from
+        <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">your Google account
+          permissions page</a>.</li>
+    </ul>
+    <p>Because LocaLinter stores no personal data on a server, there is nothing further for us to delete on your
+      behalf.</p>
+
+    <h2>Security</h2>
+    <p>All traffic is served over HTTPS. Access tokens are short-lived, scoped to the permissions listed above,
+      and held only in tab-scoped storage. Access to the tool is limited to your company Google Workspace domain.</p>
+
+    <h2>Children</h2>
+    <p>LocaLinter is an internal workplace tool and is not directed to, or intended for use by, anyone under 16.</p>
+
+    <h2>Changes to this policy</h2>
+    <p>If this policy changes materially, the date at the top of this page will be updated. Continued use of
+      LocaLinter after a change means you accept the revised policy.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about this policy or about data handled by LocaLinter can be sent to
+      <!-- TODO: confirm this mailbox exists before submitting for Google verification -->
+      <a href="mailto:privacy@supergaming.com">privacy@supergaming.com</a>.</p>
+
+    <footer class="doc-foot">
+      <a href="/">← Back to LocaLinter</a>
+    </footer>
+  </main>
+</body>
+
+</html>

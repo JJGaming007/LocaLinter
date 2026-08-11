@@ -12,21 +12,60 @@
   <link
     href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;450;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap"
     rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=2.0" />
+  <link rel="stylesheet" href="styles.css?v=2.1" />
   <link rel="stylesheet" href="device-scan.css?v=2.0" />
   <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
   <!-- Replace content with your Google OAuth Client ID (from Google Cloud Console) -->
   <meta name="google-oauth-client-id" content="454916925795-s83bblcn67b69platl0q6m8avp2upfvm.apps.googleusercontent.com" />
+  <!-- Only these Google Workspace domains may sign in (comma-separated) -->
+  <meta name="google-allowed-domains" content="supergaming.com" />
   <script src="assets/xlsx.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="shell.js?v=1.1" defer></script>
-  <script src="main.js?v=1.8" defer></script>
+  <script src="main.js?v=1.9" defer></script>
+  <script>
+    // Skip the gate's first paint when this tab already holds a session.
+    try {
+      var t = JSON.parse(sessionStorage.getItem('localinter_gsheet_token_v3') || 'null');
+      if (t && t.access_token && t.expires_at > Date.now()) {
+        document.documentElement.classList.add('pre-auth');
+      }
+    } catch (e) { /* no session hint available */ }
+  </script>
   <script src="device-scan.js?v=1.4" defer></script>
 </head>
 
 <body>
   <!-- Toast container -->
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <!-- ══ Sign-in gate — covers the app until a Google session exists ══ -->
+  <div class="auth-gate" id="auth-gate" role="dialog" aria-modal="true" aria-labelledby="auth-gate-title">
+    <div class="auth-gate-card">
+      <div class="auth-gate-brand">
+        <span class="sb-mark">L</span>
+        <span class="auth-gate-wordmark">LocaLinter<span class="accent-text">.</span></span>
+      </div>
+      <h1 class="auth-gate-title" id="auth-gate-title">Sign in to continue</h1>
+      <p class="auth-gate-sub">LocaLinter reads and writes your localization sheets, so it needs a Google
+        account before it can open. Sign in with your <strong class="auth-gate-domain"
+          id="gate-domain">@supergaming.com</strong> work account.</p>
+      <button id="gate-signin-btn" class="auth-gate-btn" type="button">
+        <svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true">
+          <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/>
+          <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"/>
+          <path fill="#FBBC05" d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33z"/>
+          <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.9 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/>
+        </svg>
+        <span>Continue with Google</span>
+      </button>
+      <p class="auth-gate-note" id="gate-status">Your session lasts until you close this tab.</p>
+      <p class="auth-gate-legal">
+        By signing in you agree to how LocaLinter handles your data, described in the
+        <a href="privacy.html">Privacy Policy</a>.
+      </p>
+    </div>
+  </div>
 
   <div class="app" id="app">
     <!-- ══ Sidebar ══ -->
@@ -181,6 +220,13 @@
                   <div id="account-menu-email" class="account-menu-email"></div>
                 </div>
               </div>
+              <a href="privacy.html" class="account-menu-item" role="menuitem">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 3l7 3v6c0 4.2-2.8 7.5-7 9-4.2-1.5-7-4.8-7-9V6z" />
+                </svg>
+                Privacy policy
+              </a>
               <button id="account-signout-btn" class="account-menu-item" type="button">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
                   stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">

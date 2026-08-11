@@ -1236,6 +1236,7 @@ td.editable-cell.save-error { border-left-color: var(--danger); background: var(
   transition: background var(--transition), color var(--transition);
 }
 .account-menu-item:hover { background: var(--panel-3); color: var(--text); }
+a.account-menu-item { text-decoration: none; }
 
 /* ============================================================
    QUICK TRANSLATOR
@@ -1494,3 +1495,125 @@ body.sb-collapsed .qt-panel { left: calc(var(--sidebar-w) + 1rem); }
   .results-header { align-items: flex-start; }
   .page-title { font-size: 1.6rem; }
 }
+
+/* ============================================================
+   SIGN-IN GATE
+   Shown until a Google session exists; hides the app entirely.
+   ============================================================ */
+.auth-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1.25rem;
+  background:
+    radial-gradient(1100px 600px at 50% -10%, rgba(217, 138, 61, 0.09), transparent 65%),
+    var(--bg);
+}
+
+body.gated { overflow: hidden; }
+
+/* Set by the head script when the tab already holds a session, so the gate
+   never flashes before main.js runs. Cleared as soon as setGated() takes over. */
+html.pre-auth .auth-gate { display: none; }
+
+.auth-gate-card {
+  width: 100%;
+  max-width: 400px;
+  padding: 2.25rem 2rem 1.75rem;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+}
+
+.auth-gate-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  margin-bottom: 1.5rem;
+}
+
+.auth-gate-wordmark {
+  font-family: var(--serif);
+  font-size: 1.15rem;
+  letter-spacing: -0.01em;
+}
+
+.auth-gate-title {
+  font-family: var(--serif);
+  font-size: 1.45rem;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  margin-bottom: 0.5rem;
+}
+
+.auth-gate-sub {
+  color: var(--text-2);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  margin-bottom: 1.6rem;
+}
+
+.auth-gate-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.7rem 1rem;
+  font-family: var(--font);
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border-hover);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.auth-gate-btn:hover:not(:disabled) {
+  background: var(--panel-3);
+  border-color: var(--accent-line);
+}
+
+.auth-gate-btn:disabled { opacity: 0.6; cursor: default; }
+
+.auth-gate-note {
+  margin-top: 1rem;
+  font-size: 0.775rem;
+  color: var(--muted);
+  min-height: 1.2em;
+}
+
+.auth-gate-note.error { color: var(--danger); }
+
+.auth-gate-domain {
+  font-family: var(--mono);
+  font-size: 0.84em;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.auth-gate-legal {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: var(--faint);
+}
+
+.auth-gate-legal a {
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border-hover);
+  transition: color var(--transition);
+}
+
+.auth-gate-legal a:hover { color: var(--text-2); }
