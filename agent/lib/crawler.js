@@ -34,6 +34,7 @@ class Crawler {
     this.observedText = new Map();     // screenId -> strings read off that screen
     this.routeScreenFor = new Map();   // screenId -> name in the route map
     this.recoveries = 0;
+    this.langMismatchChecked = false;
     this.adb = adb;
     this.bridge = bridge;
     this.sheet = sheet;
@@ -294,6 +295,28 @@ class Crawler {
       }
     }
     return out;
+  }
+
+  /**
+   * A scan checking the wrong column reports almost every string as a defect.
+   * The per-string findings already say so, but a hundred of them buries the
+   * real ones — so say it once, loudly, as soon as a screen makes it obvious.
+   */
+  checkLanguageMismatch(issues) {
+    if (this.langMismatchChecked) return true;
+    const wrong = issues.filter((i) => i.type === 'wrong_language' && i.matchedLanguage);
+    if (wrong.length < 4) return false;
+
+    const tally = new Map();
+    for (const i of wrong) tally.set(i.matchedLanguage, (tally.get(i.matchedLanguage) || 0) + 1);
+    const [lang, n] = [...tally.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (n < 4) return false;
+
+    this.langMismatchChecked = true;
+    const msg = `The game appears to be running in "${lang}" but the scan is checking the "${this.target.header}" column — ${n} strings on the first screen matched ${lang}. Switch the game's language or pick the matching column, or nearly every finding will be a false positive.`;
+    this.run.log(msg, 'warn');
+    this.run.warnings.push(msg);
+    return true;
   }
 
   /** The app strands itself sometimes; the route says how to get it back. */
@@ -589,6 +612,7 @@ class Crawler {
     ].map((i) => ({ ...i, screenId, screenFile: file, scene: ctx.scene, depth, path: pathLabels }));
 
     const deduped = dedupe(issues);
+    this.langMismatchChecked = this.checkLanguageMismatch(deduped);
     this.run.addIssues(deduped);
     this.run.addScreen({
       id: screenId,

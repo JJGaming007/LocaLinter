@@ -220,6 +220,8 @@
   // buried in a file on someone's machine.
 
   let routeList = [];
+  let reconnectAttempts = 0;
+  let reconnectTimer = null;
 
   async function loadRoutes() {
     if (!el.dsRoute) return;
@@ -458,6 +460,7 @@
       });
       runId = r.runId;
       running = true;
+      reconnectAttempts = 0;
       el.dsStop.disabled = false;
       el.dsStop.textContent = 'Stop scan';
       updateStartState();
@@ -492,13 +495,52 @@
     if (source) source.close();
     source = new EventSource(`${agentUrl()}/api/run/${runId}/events`);
     source.onmessage = (e) => {
+      reconnectAttempts = 0;
       let ev;
       try { ev = JSON.parse(e.data); } catch { return; }
       handleEvent(ev);
     };
+    // A dropped stream is not a dead scan. The run lives in the agent, so
+    // reconnect and keep following it — an agent restart, a laptop sleeping,
+    // or a flaky loopback should not throw away a scan that is still going.
     source.onerror = () => {
       if (!running) return;
-      setStatus(el.dsRunStatus, 'Connection to the agent dropped', 'bad');
+      if (reconnectTimer) return;
+      reconnectAttempts++;
+      if (reconnectAttempts > 12) {
+        setStatus(el.dsRunStatus, 'Lost the agent — findings so far are kept below', 'bad');
+        log('Gave up reconnecting to the agent. The findings already received are still listed.', 'error');
+        running = false;
+        el.dsStop.disabled = true;
+        updateStartState();
+        return;
+      }
+      setStatus(el.dsRunStatus, `Reconnecting to the agent (${reconnectAttempts})…`, 'pending');
+      reconnectTimer = setTimeout(async () => {
+        reconnectTimer = null;
+        try {
+          // If the agent came back without the run, say so rather than
+          // reconnecting forever to something that no longer exists.
+          const { runs } = await api('/api/runs');
+          const mine = (runs || []).find((r) => r.id === runId);
+          if (mine && mine.status !== 'running') {
+            running = false;
+            setStatus(el.dsRunStatus, `Run ${mine.status} while disconnected — ${mine.issues} issues`, mine.status === 'done' ? 'ok' : 'bad');
+            el.dsStop.disabled = true;
+            updateStartState();
+            return;
+          }
+          if (!mine) {
+            running = false;
+            setStatus(el.dsRunStatus, 'The agent restarted and lost this run', 'bad');
+            log('The agent restarted while the scan was running, so the run was lost. Findings received before that are listed below.', 'error');
+            el.dsStop.disabled = true;
+            updateStartState();
+            return;
+          }
+        } catch { /* agent still down; the retry below keeps trying */ }
+        listen();
+      }, Math.min(2000 * reconnectAttempts, 10000));
     };
   }
 
