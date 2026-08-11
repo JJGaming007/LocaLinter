@@ -21,6 +21,7 @@ const { SheetIndex, RTL_CODES } = require('./lib/sheet');
 const { ClaudeAnalyzer } = require('./lib/claude');
 const { Crawler } = require('./lib/crawler');
 const store = require('./lib/store');
+const routeMaps = require('./lib/routes');
 
 const PORT = Number(process.env.PORT || 8790);
 const HOST = '127.0.0.1';
@@ -74,6 +75,12 @@ const routes = {
   }),
 
   'GET /api/config': async () => ({ config: config.redact(config.load()) }),
+
+  // Route maps: what a previous pass learned about a game — its screens, the
+  // coordinates of the info badges that open flyouts, how to switch language,
+  // how to recover when it strands itself. Served so the browser can offer
+  // them and a scan can start knowing where things are.
+  'GET /api/routes': async () => ({ routes: routeMaps.list() }),
 
   'POST /api/config': async (req) => {
     const body = await readBody(req);
@@ -170,6 +177,12 @@ const routes = {
 
     const mode = body.mode === 'editor' ? 'editor' : 'device';
     const runCfg = { ...cfg, ...pickOverrides(body.options) };
+    const route = body.route ? routeMaps.get(body.route) : null;
+    if (body.route && !route) {
+      const err = new Error(`No route map named "${body.route}".`);
+      err.status = 400;
+      throw err;
+    }
 
     const run = store.createRun({
       mode,
@@ -185,7 +198,7 @@ const routes = {
     });
 
     // Fire and forget: the browser follows along over SSE.
-    startScan({ run, cfg: runCfg, sheet, target, mode, serial: body.serial || null }).catch((e) => {
+    startScan({ run, cfg: runCfg, sheet, target, mode, serial: body.serial || null, route }).catch((e) => {
       run.log(`Scan failed: ${e.message}`, 'error');
       run.finish('failed', e);
     });
@@ -215,8 +228,37 @@ function pickOverrides(options) {
 
 // ── the scan itself ───────────────────────────────────────────────────────
 
-async function startScan({ run, cfg, sheet, target, mode, serial }) {
+async function startScan({ run, cfg, sheet, target, mode, serial, route }) {
   run.log(`Scanning "${target.header}" against ${sheet.entries.length} sheet rows.`);
+
+  if (route) {
+    const app = route.app || {};
+    run.log(`Route map "${app.name || 'unnamed'}" loaded: ${Object.keys(route.screens || {}).length} known screens.`);
+
+    // A route recorded against another build is worse than none, so say so
+    // rather than driving taps at coordinates from a different layout.
+    const env = routeMaps.packageFor(route, cfg.androidPackage);
+    if (cfg.androidPackage && !env) {
+      run.warnings.push(
+        `The route map does not list package "${cfg.androidPackage}". Its coordinates were recorded against ${Object.values(app.packages || {}).join(', ') || 'another build'}.`
+      );
+    } else if (env) {
+      run.log(`Package matches the route's "${env}" build.`);
+    }
+
+    // Languages the route marks as unimplemented would otherwise fill the
+    // report with noise that is already known and accepted.
+    const known = Object.entries(route.knownIssues || {}).filter(([k]) => k !== '$comment');
+    for (const [key, note] of known) {
+      if (String(target.code || '').toLowerCase().startsWith(key.slice(0, 2).toLowerCase())
+          || String(target.header || '').toLowerCase() === key.toLowerCase()) {
+        run.warnings.push(`Route map flags this language as known-broken on the recorded build: ${note}`);
+      }
+    }
+    if (route.capabilities && route.capabilities.accessibilityText === false) {
+      run.log('Route map: this game exposes no accessibility text, so strings come from pixels.');
+    }
+  }
 
   const adb = mode === 'device' ? new Adb(cfg.adbPath, serial) : null;
   if (adb) {

@@ -27,7 +27,7 @@
   function init() {
     [
       'ds-agent-url', 'ds-reconnect', 'ds-agent-status', 'ds-api-key', 'ds-save-key', 'ds-key-state',
-      'ds-mode', 'ds-device', 'ds-sheet', 'ds-language', 'ds-package', 'ds-probe', 'ds-start', 'ds-stop',
+      'ds-mode', 'ds-device', 'ds-sheet', 'ds-language', 'ds-package', 'ds-route', 'ds-route-card', 'ds-probe', 'ds-start', 'ds-stop',
       'ds-advanced-toggle', 'ds-advanced', 'ds-probe-out', 'ds-agent-out', 'ds-target-status',
       'ds-max-screens', 'ds-max-actions', 'ds-max-depth', 'ds-model', 'ds-effort', 'ds-adb-path',
       'ds-vision', 'ds-scroll', 'ds-longpress', 'ds-blocked',
@@ -58,6 +58,7 @@
     el.dsFilterText.addEventListener('input', renderFindings);
 
     el.dsSheet.addEventListener('change', onSheetChange);
+    el.dsRoute.addEventListener('change', renderRouteCard);
 
     document.addEventListener('localinter:tab', (e) => {
       if (e.detail.tabId === 'device-scan') refreshSheets();
@@ -68,6 +69,7 @@
     onModeChange();
     refreshSheets();
     connect();
+    loadRoutes();
   }
 
   // ── agent ───────────────────────────────────────────────────────────────
@@ -206,6 +208,83 @@
 
   function sheet() {
     return window.LocaLinter && window.LocaLinter.getSheet ? window.LocaLinter.getSheet() : null;
+  }
+
+  // ── route maps ──────────────────────────────────────────────────────────
+  // What earlier passes worked out about a game: its screens, where the info
+  // badges that open flyouts sit, how to switch language, how to recover when
+  // it strands itself. Shown here so a run starts from that knowledge instead
+  // of rediscovering it, and so what the agent knows is visible rather than
+  // buried in a file on someone's machine.
+
+  let routeList = [];
+
+  async function loadRoutes() {
+    if (!el.dsRoute) return;
+    try {
+      const r = await api('/api/routes');
+      routeList = r.routes || [];
+    } catch {
+      routeList = []; // agent offline; the picker just stays empty
+    }
+    const prev = el.dsRoute.value;
+    el.dsRoute.innerHTML = '<option value="">Explore from scratch</option>';
+    routeList.forEach((rt) => {
+      const opt = document.createElement('option');
+      opt.value = rt.name;
+      opt.textContent = `${rt.label} — ${rt.screens} screens`;
+      el.dsRoute.appendChild(opt);
+    });
+    if (prev && routeList.some((rt) => rt.name === prev)) el.dsRoute.value = prev;
+    else autoSelectRoute();
+    renderRouteCard();
+  }
+
+  // Pick the route matching the package being scanned, so the common case
+  // needs no thought.
+  function autoSelectRoute() {
+    const pkg = (el.dsPackage.value || '').trim();
+    if (!pkg) return;
+    const hit = routeList.find((rt) => Object.values(rt.packages || {}).includes(pkg));
+    if (hit) el.dsRoute.value = hit.name;
+  }
+
+  function renderRouteCard() {
+    const rt = routeList.find((r) => r.name === el.dsRoute.value);
+    if (!rt) {
+      el.dsRouteCard.classList.add('hidden');
+      el.dsRouteCard.innerHTML = '';
+      return;
+    }
+    const pkg = (el.dsPackage.value || '').trim();
+    const envs = Object.entries(rt.packages || {});
+    const matched = envs.find(([, v]) => v === pkg);
+    const mismatch = pkg && !matched;
+
+    const bits = [];
+    bits.push(`<div class="ds-route-line"><strong>${escapeHtml(rt.label)}</strong>
+      <span class="ds-route-meta">${rt.screens} screens · ${rt.infoBadges} info badges · ${rt.procedures.length} procedures</span></div>`);
+    if (rt.screenNames.length) {
+      bits.push(`<div class="ds-route-line ds-route-dim">Knows: ${rt.screenNames.map(escapeHtml).join(', ')}</div>`);
+    }
+    if (envs.length) {
+      bits.push(`<div class="ds-route-line ds-route-dim">Builds: ${envs.map(([k, v]) =>
+        `${escapeHtml(k)} <code>${escapeHtml(v)}</code>`).join(' · ')}</div>`);
+    }
+    if (rt.recordedOn) {
+      const d = rt.recordedOn;
+      bits.push(`<div class="ds-route-line ds-route-dim">Recorded on ${escapeHtml(d.device || 'unknown device')}${
+        d.resolution ? ` at ${d.resolution.join('×')}` : ''}${d.build ? `, build ${escapeHtml(d.build)}` : ''}</div>`);
+    }
+    rt.knownIssues.forEach((ki) => {
+      bits.push(`<div class="ds-route-line ds-route-warn">Known issue — ${escapeHtml(ki.key)}: ${escapeHtml(ki.note)}</div>`);
+    });
+    if (mismatch) {
+      bits.push(`<div class="ds-route-line ds-route-warn">This route was recorded against a different package than
+        <code>${escapeHtml(pkg)}</code>; its coordinates may not line up.</div>`);
+    }
+    el.dsRouteCard.innerHTML = bits.join('');
+    el.dsRouteCard.classList.remove('hidden');
   }
 
   // ── which sheet to compare against ──────────────────────────────────────
@@ -364,6 +443,7 @@
           mode: el.dsMode.value,
           serial: el.dsDevice.value || null,
           targetLanguage: el.dsLanguage.value,
+          route: el.dsRoute.value || null,
           sheet: s,
           options: options(),
         }),

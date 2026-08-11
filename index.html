@@ -683,7 +683,12 @@
                 <label for="ds-package">Android package <span class="ds-opt">(optional)</span></label>
                 <input type="text" id="ds-package" placeholder="com.studio.game" spellcheck="false" />
               </div>
+              <div class="ds-field">
+                <label for="ds-route">Route map <span class="ds-opt">(what earlier passes learned)</span></label>
+                <select id="ds-route"><option value="">Explore from scratch</option></select>
+              </div>
             </div>
+            <div class="ds-route-card hidden" id="ds-route-card"></div>
             <div class="ds-row ds-actions">
               <button class="btn btn-secondary sm-btn" id="ds-probe">Test connection</button>
               <button class="btn btn-primary" id="ds-start" disabled>Start scan</button>

@@ -364,3 +364,27 @@
   .ds-screen { grid-template-columns: 1fr; }
   .ds-row label { min-width: 100%; }
 }
+
+/* ── route map card ──────────────────────────────────────────────────────
+   What the agent already knows about this game, shown before a run starts. */
+.ds-route-card {
+  margin-top: 0.9rem;
+  padding: 0.75rem 0.85rem;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.ds-route-line { font-size: 0.78rem; line-height: 1.5; color: var(--text-2); }
+.ds-route-line code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  color: var(--text);
+}
+.ds-route-meta { color: var(--muted); margin-left: 0.4rem; }
+.ds-route-dim { color: var(--muted); }
+.ds-route-warn { color: var(--warning); }
