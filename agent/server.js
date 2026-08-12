@@ -22,6 +22,8 @@ const { ClaudeAnalyzer } = require('./lib/claude');
 const { Crawler } = require('./lib/crawler');
 const store = require('./lib/store');
 const routeMaps = require('./lib/routes');
+const paths = require('./lib/paths');
+const tools = require('./lib/tools');
 
 const PORT = Number(process.env.PORT || 8790);
 const HOST = '127.0.0.1';
@@ -66,6 +68,15 @@ function readBody(req, limit = 64 * 1024 * 1024) {
 
 // ── route handlers ────────────────────────────────────────────────────────
 
+// adb may be the tester's own install, a copy the agent downloaded, or missing
+// entirely. Resolving it in one place means every route below gets a binary
+// that actually runs, and falls back to the configured value so adb.js can
+// report "not found" in its own words.
+async function adbFor(cfg) {
+  const found = await tools.resolveAdb(cfg);
+  return found ? found.path : (cfg.adbPath || 'adb');
+}
+
 const routes = {
   'GET /api/health': async () => ({
     ok: true,
@@ -98,12 +109,29 @@ const routes = {
 
   'GET /api/devices': async () => {
     const cfg = config.load();
+    const bin = await adbFor(cfg);
     try {
-      const devices = await Adb.devices(cfg.adbPath);
-      return { devices, adbPath: cfg.adbPath || 'adb' };
+      const devices = await Adb.devices(bin);
+      return { devices, adbPath: bin };
     } catch (e) {
-      return { devices: [], error: e.message, adbPath: cfg.adbPath || 'adb' };
+      return { devices: [], error: e.message, adbPath: bin };
     }
+  },
+
+  // Whether adb is usable, and where it came from. The browser asks so it can
+  // offer the download instead of leaving a tester staring at "No devices".
+  'GET /api/tools/adb': async () => {
+    const found = await tools.resolveAdb(config.load());
+    return found ? { found: true, ...found } : { found: false, downloadFrom: tools.ZIP_URL };
+  },
+
+  // Explicitly triggered from the browser: fetch Google's platform-tools and
+  // remember where it landed, so later runs need no network.
+  'POST /api/tools/adb': async () => {
+    const log = [];
+    const adbPath = await tools.downloadAdb((m) => log.push(m));
+    const next = config.save({ adbPath });
+    return { adbPath, log, config: config.redact(next) };
   },
 
   'POST /api/probe': async (req) => {
@@ -115,7 +143,7 @@ const routes = {
 
     if (mode === 'device') {
       const serial = body.serial || null;
-      const adb = new Adb(cfg.adbPath, serial);
+      const adb = new Adb(await adbFor(cfg), serial);
       try {
         const size = await adb.screenSize();
         const activity = await adb.currentActivity();
@@ -260,7 +288,7 @@ async function startScan({ run, cfg, sheet, target, mode, serial, route }) {
     }
   }
 
-  const adb = mode === 'device' ? new Adb(cfg.adbPath, serial) : null;
+  const adb = mode === 'device' ? new Adb(await adbFor(cfg), serial) : null;
   if (adb) {
     try {
       await adb.forward(cfg.bridgePort);
@@ -445,10 +473,17 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, HOST, () => {
+// The data directory has to exist before anything reads config or writes a
+// run, and a packaged build carries its route maps inside the executable.
+paths.ensure();
+paths.seedRoutes();
+
+server.listen(PORT, HOST, async () => {
   const cfg = config.load();
   console.log(`LocaLinter agent ${VERSION} listening on http://${HOST}:${PORT}`);
-  console.log(`  adb:      ${cfg.adbPath || 'adb (from PATH)'}`);
+  console.log(`  data:     ${paths.DATA_DIR}`);
+  const adb = await tools.resolveAdb(cfg);
+  console.log(`  adb:      ${adb ? `${adb.path} (${adb.source})` : 'NOT FOUND — the Device Scan tab can fetch it'}`);
   console.log(`  model:    ${cfg.model}`);
   console.log(`  API key:  ${cfg.apiKey ? 'configured' : 'NOT SET — add it in the Device Scan tab'}`);
   console.log(`  bridge:   127.0.0.1:${cfg.bridgePort}`);

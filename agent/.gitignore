@@ -1,3 +1,8 @@
 node_modules/
 config.json
 runs/
+# Build output: an 86 MB executable and its intermediates have no business in git.
+build/
+dist/
+# platform-tools, when the agent has downloaded its own copy.
+tools/

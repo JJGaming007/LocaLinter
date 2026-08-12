@@ -7,7 +7,35 @@ against an Android device over ADB and against the Unity Editor in Play Mode.
 Everything runs on your machine. The agent binds to `127.0.0.1` only, and your
 Anthropic API key never reaches the browser.
 
-## Setup
+## Why this runs on your PC and not on a server
+
+Your test device is plugged into a USB port on your machine. ADB talks to it
+over that cable, so the thing driving the scan has to be on the same machine —
+a server in a data centre has no cable to your phone. That is why every tester
+runs their own copy of the agent, and why it never needs to be reachable from
+the network.
+
+## For testers
+
+1. Get `LocaLinter-Agent.exe` and run it. A console window opens and stays
+   open — that *is* the agent, so leave it alone while you scan.
+2. Open LocaLinter, sign in, load your sheet, and go to the **Device Scan** tab.
+   It should say **Connected**. If not, press **Reconnect**.
+3. Paste your Anthropic API key once. It is stored on your machine only.
+4. No `adb`? The panel says so and offers a **Download ADB** button, which
+   fetches Google's platform-tools for you. Nothing to install by hand.
+
+You need USB debugging enabled on the device. You do not need Node, the Android
+SDK, or a checkout of this repo.
+
+Windows will likely warn about an unrecognised app the first time, because the
+executable is unsigned — *More info → Run anyway*. Signing it with a code
+signing certificate is the only way to remove that prompt.
+
+The agent keeps config, route maps and run output in
+`%LOCALAPPDATA%\LocaLinter\agent`. Delete that folder to start clean.
+
+## From a source checkout
 
 ```bash
 cd agent
@@ -15,12 +43,30 @@ npm install
 npm start
 ```
 
-Then open LocaLinter, load your sheet, and switch to the **Device Scan** tab.
-Paste your Anthropic API key once — the agent stores it in `agent/config.json`,
-which is gitignored. `ANTHROPIC_API_KEY` in the environment also works.
+Identical behaviour, except the data directory is `agent/` itself, so an
+existing `config.json` and `runs/` stay exactly where they were. Requirements:
+Node 18+ (20.12+ to build the executable), `adb` on your PATH or downloaded
+through the panel. `ANTHROPIC_API_KEY` in the environment works instead of
+pasting a key. `LOCALINTER_DATA_DIR` overrides where state is kept, and `PORT`
+moves it off 8790.
 
-Requirements: Node 18+, `adb` on your PATH (or point at it in Advanced), USB
-debugging enabled on the device.
+## Building the executable
+
+```bash
+cd agent
+npm run build:exe        # -> agent/dist/LocaLinter-Agent.exe (~87 MB)
+```
+
+Bundles the agent with esbuild, embeds the route maps under `routes/` as an
+asset, and injects the result into a copy of the Node binary you built with
+(Node's Single Executable Application support). Windows only, and it produces an
+executable for the machine it ran on. `postject` prints a *"signature seems
+corrupted"* warning — expected, since injecting into a signed `node.exe`
+invalidates Node's signature.
+
+Hand the resulting file to testers however suits you — a GitHub release asset,
+a shared drive. Set `AGENT_DOWNLOAD_URL` at the top of `device-scan.js` to that
+location and the Device Scan panel will link to it directly.
 
 ## The Unity bridge — add this
 

@@ -12,7 +12,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;450;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap"
     rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=2.1" />
+  <link rel="stylesheet" href="styles.css?v=2.2" />
   <link rel="stylesheet" href="device-scan.css?v=2.0" />
   <link rel="icon" type="image/png" href="/assets/favicon-32.png" />
   <link rel="apple-touch-icon" href="/assets/logo.png" />
@@ -23,7 +23,7 @@
   <script src="assets/xlsx.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="shell.js?v=1.1" defer></script>
-  <script src="main.js?v=1.9" defer></script>
+  <script src="main.js?v=2.0" defer></script>
   <script>
     // Skip the gate's first paint when this tab already holds a session.
     try {
@@ -33,65 +33,22 @@
       }
     } catch (e) { /* no session hint available */ }
   </script>
-  <script src="device-scan.js?v=1.4" defer></script>
+  <script src="device-scan.js?v=1.6" defer></script>
 </head>
 
 <body>
   <!-- Toast container -->
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
-  <!-- ══ Landing page + sign-in gate ══
-       Doubles as the public homepage: it has to describe the app and link the
-       privacy policy without signing in, or Google OAuth verification fails
-       its branding check. Covers the app until a Google session exists. -->
+  <!-- ══ Sign-in gate ══
+       Google sign-in and nothing else. Covers the app until a Google session
+       exists. The legal links stay because Google OAuth verification checks
+       the app's home page for them. -->
   <div class="auth-gate" id="auth-gate" aria-labelledby="auth-gate-title">
-    <header class="auth-gate-topbar">
-      <div class="auth-gate-brand">
-        <img class="sb-mark" src="/assets/logo.png" alt="LocaLinter" width="22" height="22" />
-        <span class="auth-gate-wordmark">LocaLinter<span class="accent-text">.</span></span>
-      </div>
-      <nav class="auth-gate-topnav" aria-label="About this app">
-        <a href="privacy.html">Privacy</a>
-        <a href="terms.html">Terms</a>
-      </nav>
-    </header>
-
     <div class="auth-gate-card">
-      <h1 class="auth-gate-title" id="auth-gate-title">Localization QA for your Google Sheets</h1>
-      <p class="auth-gate-sub">LocaLinter is SuperGaming's localization validator. Point it at the Google Sheet
-        holding your game's translations and it flags formatting errors, missing locales, and variable
-        mismatches across every language at once — then writes the fixes you approve straight back to the
-        sheet.</p>
-
-      <ul class="auth-gate-features">
-        <li>
-          <strong>Format issues</strong>
-          Catches broken placeholders, stray tags, and spacing and punctuation problems in translated strings.
-        </li>
-        <li>
-          <strong>Missing locales</strong>
-          Shows which keys are still untranslated, per language, so nothing ships half-localized.
-        </li>
-        <li>
-          <strong>Search across languages</strong>
-          Finds any string in any locale and edits it in place, with changes synced back to the sheet.
-        </li>
-        <li>
-          <strong>Device scan</strong>
-          Optionally drives a build on a real device to catch text that overflows or truncates on screen.
-        </li>
-      </ul>
-
-      <div class="auth-gate-scopes">
-        <h2>What LocaLinter asks for</h2>
-        <p>Signing in with Google lets LocaLinter read your name, email, and profile picture to identify you,
-          and read and write the specific Google Sheet you choose to open. It never browses the rest of your
-          Drive, and it only writes to a sheet when you click save. Full detail is in the
-          <a href="privacy.html">Privacy Policy</a>.</p>
-      </div>
-
-      <p class="auth-gate-domain-note">Access is limited to <strong class="auth-gate-domain"
-          id="gate-domain">@supergaming.com</strong> work accounts.</p>
+      <img class="auth-gate-mark" src="/assets/logo.png" alt="" width="40" height="40" />
+      <h1 class="auth-gate-title" id="auth-gate-title">LocaLinter<span class="accent-text">.</span></h1>
+      <p class="auth-gate-sub">Localization QA for your Google Sheets.</p>
 
       <button id="gate-signin-btn" class="auth-gate-btn" type="button">
         <svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true">
@@ -103,18 +60,11 @@
         <span>Continue with Google</span>
       </button>
       <p class="auth-gate-note" id="gate-status">You stay signed in on this browser until you sign out.</p>
-      <p class="auth-gate-legal">
-        By signing in you agree to the <a href="terms.html">Terms of Service</a> and to how LocaLinter
-        handles your data, described in the <a href="privacy.html">Privacy Policy</a>.
-      </p>
     </div>
 
     <footer class="auth-gate-footer">
-      <span>LocaLinter — operated by SuperGaming</span>
-      <span class="auth-gate-footer-links">
-        <a href="privacy.html">Privacy Policy</a>
-        <a href="terms.html">Terms of Service</a>
-      </span>
+      <a href="privacy.html">Privacy</a>
+      <a href="terms.html">Terms</a>
     </footer>
   </div>
 
@@ -633,11 +583,12 @@
           <div class="ds-panel">
             <div class="ds-panel-head">
               <h3>Local agent</h3>
-              <span class="ds-status" id="ds-agent-status">Checking…</span>
+              <span class="ds-status" id="ds-agent-status">Not connected</span>
             </div>
             <p class="ds-hint">
-              ADB and the Claude API run on your machine, not in the browser. Start the agent with
-              <code>npm install &amp;&amp; npm start</code> in <code>agent/</code>, then reconnect.
+              Your device is plugged into your PC, not into a server, so the scan is driven by a small
+              program on your machine: run <code>LocaLinter-Agent.exe</code> and leave its window open.
+              Your Anthropic API key stays there and never reaches the browser.
             </p>
             <div class="ds-row">
               <label for="ds-agent-url">Agent URL</label>
@@ -650,6 +601,11 @@
               <button class="btn btn-secondary sm-btn" id="ds-save-key">Save key</button>
             </div>
             <p class="ds-hint" id="ds-key-state"></p>
+            <div class="ds-row hidden" id="ds-adb-row">
+              <label>ADB</label>
+              <span class="ds-hint" id="ds-adb-state"></span>
+              <button class="btn btn-secondary sm-btn hidden" id="ds-get-adb">Download ADB</button>
+            </div>
             <div class="ds-probe-out" id="ds-agent-out"></div>
           </div>
 

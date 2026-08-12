@@ -1,6 +1,8 @@
 'use strict';
 
-// Route maps live in agent/routes/*.json. Each one is what an earlier pass
+// Route maps live in the agent's data directory, under routes/*.json (that is
+// agent/routes from a source checkout — see lib/paths.js). Each one is what an
+// earlier pass
 // learned about a game: which packages it ships under, where its screens are,
 // which "?" badges open flyout tooltips, how to change language, and how to
 // get out of a stuck state. Serving them lets a scan start from knowledge
@@ -9,7 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const ROUTES_DIR = path.join(__dirname, '..', 'routes');
+const { ROUTES_DIR } = require('./paths');
 
 function readAll() {
   let files = [];

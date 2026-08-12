@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const RUNS_DIR = path.join(__dirname, '..', 'runs');
+const { RUNS_DIR } = require('./paths');
 
 /** One scan run: status, live event log, screenshots on disk, collected issues. */
 class Run {

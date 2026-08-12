@@ -1156,16 +1156,6 @@ window.addEventListener('DOMContentLoaded', () => {
   });
   updateAuthUI();
 
-  // Keep the gate's copy in step with the allowed-domain meta tag.
-  (function labelGateDomain() {
-    const el = document.getElementById('gate-domain');
-    if (!el) return;
-    const allowed = getAllowedDomains();
-    const note = el.closest('.auth-gate-domain-note');
-    if (allowed.length) el.textContent = allowed.map(d => '@' + d).join(' or ');
-    else if (note) note.classList.add('hidden');
-  })();
-
   (async function prepareGate() {
     if (!getOAuthClientId()) {
       setGateStatus('Google OAuth Client ID is not configured.', true);

@@ -1,9 +1,8 @@
 'use strict';
 
 const fs = require('fs');
-const path = require('path');
 
-const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
+const { CONFIG_PATH } = require('./paths');
 
 const DEFAULTS = {
   // Claude
@@ -73,6 +72,7 @@ function save(patch) {
     if (fs.existsSync(CONFIG_PATH)) stored = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
   } catch { /* start fresh */ }
   const next = { ...stored, ...patch };
+  fs.mkdirSync(require('path').dirname(CONFIG_PATH), { recursive: true });
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(next, null, 2), 'utf8');
   return load();
 }

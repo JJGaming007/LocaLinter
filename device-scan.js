@@ -11,6 +11,11 @@
 
   const $ = (id) => document.getElementById(id);
   const AGENT_KEY = 'localinter_agent_url';
+  // Where testers get LocaLinter-Agent.exe (build it with `npm run build:exe`
+  // in agent/). Point this at wherever you host it — a GitHub release asset,
+  // say — and the panel links straight there. Left empty it names the file
+  // without linking, so nothing here promises a download that does not exist.
+  const AGENT_DOWNLOAD_URL = '';
 
   const el = {};
   let agentOk = false;
@@ -27,6 +32,7 @@
   function init() {
     [
       'ds-agent-url', 'ds-reconnect', 'ds-agent-status', 'ds-api-key', 'ds-save-key', 'ds-key-state',
+      'ds-adb-row', 'ds-adb-state', 'ds-get-adb',
       'ds-mode', 'ds-device', 'ds-sheet', 'ds-language', 'ds-package', 'ds-route', 'ds-route-card', 'ds-probe', 'ds-start', 'ds-stop',
       'ds-advanced-toggle', 'ds-advanced', 'ds-probe-out', 'ds-agent-out', 'ds-target-status',
       'ds-max-screens', 'ds-max-actions', 'ds-max-depth', 'ds-model', 'ds-effort', 'ds-adb-path',
@@ -42,8 +48,9 @@
     const saved = localStorage.getItem(AGENT_KEY);
     if (saved) el.dsAgentUrl.value = saved;
 
-    el.dsReconnect.addEventListener('click', connect);
+    el.dsReconnect.addEventListener('click', connectAndLoadRoutes);
     el.dsSaveKey.addEventListener('click', saveKey);
+    el.dsGetAdb.addEventListener('click', downloadAdb);
     el.dsAdvancedToggle.addEventListener('click', () => el.dsAdvanced.classList.toggle('hidden'));
     el.dsMode.addEventListener('change', onModeChange);
     el.dsProbe.addEventListener('click', probe);
@@ -60,16 +67,25 @@
     el.dsSheet.addEventListener('change', onSheetChange);
     el.dsRoute.addEventListener('change', renderRouteCard);
 
+    // The agent runs on the user's own machine and is usually not running, so
+    // reaching for it at page load only paints a failure nobody asked about.
+    // Wait until this tab is actually opened, and retry on each open for as
+    // long as there is no connection.
     document.addEventListener('localinter:tab', (e) => {
-      if (e.detail.tabId === 'device-scan') refreshSheets();
+      if (e.detail.tabId !== 'device-scan') return;
+      refreshSheets();
+      if (!agentOk && !running) connectAndLoadRoutes();
     });
     // Loading a sheet anywhere in the app re-points the scan at it.
     document.addEventListener('localinter:sheet', refreshSheets);
 
     onModeChange();
     refreshSheets();
-    connect();
-    loadRoutes();
+  }
+
+  async function connectAndLoadRoutes() {
+    await connect();
+    if (agentOk) loadRoutes();
   }
 
   // ── agent ───────────────────────────────────────────────────────────────
@@ -99,10 +115,17 @@
     return body;
   }
 
+  // The agent has to run on the machine the device is plugged into, so every
+  // tester needs their own copy. Point them at the one-file build rather than a
+  // git checkout and a terminal.
   function showAgentError(headline) {
+    const get = AGENT_DOWNLOAD_URL
+      ? `<a href="${AGENT_DOWNLOAD_URL}">Download LocaLinter-Agent.exe</a> and run it`
+      : 'Run <code>LocaLinter-Agent.exe</code>';
     el.dsAgentOut.innerHTML =
       `<div class="ds-msg bad">${escapeHtml(headline)}<br>` +
-      `Open a terminal in <code>agent/</code> and run <code>npm install</code> then <code>npm start</code>.</div>`;
+      `${get}, then press Reconnect. Leave its window open while you scan.<br>` +
+      `Working from a source checkout? <code>npm start</code> in <code>agent/</code>.</div>`;
   }
 
   async function connect() {
@@ -117,6 +140,7 @@
       const { config } = await api('/api/config');
       agentConfig = config;
       applyConfig(config);
+      await refreshAdb();
       await refreshDevices();
       refreshLanguages();
     } catch (e) {
@@ -173,6 +197,53 @@
     } finally {
       el.dsSaveKey.disabled = false;
       el.dsSaveKey.textContent = label;
+    }
+  }
+
+  // A tester who has never installed the Android SDK has no adb, and the only
+  // symptom would otherwise be an empty device list. Say so plainly, and offer
+  // to fetch it rather than sending them to Google's download page.
+  async function refreshAdb() {
+    if (!el.dsAdbRow) return;
+    let state;
+    try {
+      state = await api('/api/tools/adb');
+    } catch {
+      return; // the agent itself is the problem; that message is already up
+    }
+    el.dsAdbRow.classList.remove('hidden');
+    if (state.found) {
+      const where = state.source === 'path' ? 'found on your PATH'
+        : state.source === 'downloaded' ? 'downloaded by the agent'
+        : 'set in Advanced';
+      el.dsAdbState.textContent = `Ready — ${where}.`;
+      el.dsAdbState.className = 'ds-hint ok';
+      el.dsGetAdb.classList.add('hidden');
+    } else {
+      el.dsAdbState.textContent = 'Not installed — a scan cannot reach your device without it.';
+      el.dsAdbState.className = 'ds-hint bad';
+      el.dsGetAdb.classList.remove('hidden');
+    }
+  }
+
+  async function downloadAdb() {
+    const label = el.dsGetAdb.textContent;
+    el.dsGetAdb.disabled = true;
+    el.dsGetAdb.textContent = 'Downloading…';
+    el.dsAdbState.textContent = 'Fetching platform-tools from Google — this takes a moment.';
+    el.dsAdbState.className = 'ds-hint';
+    try {
+      await api('/api/tools/adb', { method: 'POST' });
+      toast('ADB installed.');
+      await refreshAdb();
+      await refreshDevices();
+    } catch (e) {
+      el.dsAdbState.textContent = e.message;
+      el.dsAdbState.className = 'ds-hint bad';
+      toast(e.message, 'error');
+    } finally {
+      el.dsGetAdb.disabled = false;
+      el.dsGetAdb.textContent = label;
     }
   }
 
