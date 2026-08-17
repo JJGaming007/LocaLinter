@@ -121,6 +121,22 @@ function runChecks(state, sheet, opts = {}) {
     }
 
     // ── sheet comparison ──────────────────────────────────────────────────
+    //
+    // This mirrors how the check is done by hand:
+    //
+    //   1. Find the on-screen string in the sheet.
+    //   2. Found in the column under test  → correct, say nothing.
+    //   3. Found only in the source column → look at what the target column
+    //      holds for that same key:
+    //        · a real translation      → REPORT: the build is ignoring it
+    //        · the English text again  → leave it; the build matches the sheet
+    //        · nothing at all          → leave it; there is nothing to show
+    //   4. Not found anywhere          → REPORT: probably hardcoded, never
+    //                                    sent for translation
+    //
+    // The distinction that matters: a missing translation is a *sheet* problem
+    // and belongs in Missing locales, while a translation the build fails to
+    // use is a *build* problem and belongs here.
     const exact = sheet.lookupExact(raw).filter((h) => h.header !== '__key__');
     const exactHeaders = new Set(exact.map((h) => h.header));
 
@@ -128,16 +144,32 @@ function runChecks(state, sheet, opts = {}) {
       const inTarget = targetHeader ? exactHeaders.has(targetHeader) : true;
       if (!inTarget) {
         const isEnglish = englishHeader && exactHeaders.has(englishHeader);
-        const hit = exact[0];
+        // lookupExact matches by value across the whole sheet, so these hits
+        // can be different rows. Report against the row that actually matched
+        // the source column — taking hits[0] blindly attributed the finding to
+        // an unrelated key and quoted that key's translation as "expected".
+        const hit = (isEnglish && exact.find((h) => h.header === englishHeader)) || exact[0];
         const entry = hit.entry;
         const expected = targetHeader ? entry.values[targetHeader] : '';
-        if (isEnglish && expected && expected.trim()) {
+        // A translation identical to the source is not an untranslated string:
+        // "OK", "Menu" and most proper nouns are legitimately the same in both.
+        const sameAsSource = englishHeader && expected &&
+          norm(expected) === norm(entry.values[englishHeader] || '');
+        if (isEnglish && expected && expected.trim() && !sameAsSource) {
+          // The sheet has a real translation and the build is not using it.
+          // This is the finding worth a tester's time.
           add('untranslated', 'high', t,
             `Source-language string is showing while "${targetHeader}" has a translation.`,
             { key: entry.key, row: entry.rowNumber, expected, matchedLanguage: englishHeader });
+        } else if (isEnglish && sameAsSource) {
+          // The target column holds the English text too. The build is showing
+          // exactly what the sheet says to show, so there is no build defect
+          // here — at most a gap in the sheet, which Missing locales covers.
         } else if (isEnglish) {
-          add('missing_translation', 'high', t,
-            `Source-language string is showing and the sheet has no "${targetHeader}" value for this key.`,
+          // No target value at all: again, the build has nothing else it could
+          // display. Kept at low severity as a pointer, not raised as a defect.
+          add('missing_translation', 'low', t,
+            `The sheet has no "${targetHeader}" value for this key, so the build can only show the source string.`,
             { key: entry.key, row: entry.rowNumber, matchedLanguage: englishHeader });
         } else {
           add('wrong_language', 'high', t,
@@ -182,8 +214,8 @@ function runChecks(state, sheet, opts = {}) {
           `Closest sheet match is in "${best.header}", not "${targetHeader}".`,
           { key: best.entry.key, row: best.entry.rowNumber, expected: best.entry.values[targetHeader] || '', matchedLanguage: best.header });
       } else if (!fuzzy.length && raw.trim().length >= 3 && /\p{L}/u.test(raw) && !/^[\p{N}\p{P}\p{S}\s]+$/u.test(raw)) {
-        add('not_in_sheet', 'low', t,
-          'This string is not in the localization sheet in any language — likely hardcoded and never localized.');
+        add('not_in_sheet', 'medium', t,
+          'No key or source string anywhere in the sheet matches this text — it was probably hardcoded and never sent for translation.');
       }
 
       // Target language is non-Latin but the rendered string is plain ASCII words

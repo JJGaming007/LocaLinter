@@ -3,6 +3,13 @@
 const { runChecks } = require('./checks');
 const { perceptualHash, hammingDistance, size: pngSize } = require('./png');
 const { norm } = require('./sheet');
+const memory = require('./memory');
+
+// Findings that are a claim about *which language* a string is in. These are
+// the ones the sheet can settle; a truncation or an overlap it cannot.
+const LANGUAGE_CLAIMS = new Set([
+  'wrong_language', 'untranslated', 'missing_translation', 'probably_untranslated',
+]);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -27,13 +34,17 @@ function safeRegexes(patterns) {
  * info button is explored exactly like navigating to a new menu.
  */
 class Crawler {
-  constructor({ cfg, adb, bridge, sheet, analyzer, run, target, route }) {
+  constructor({ cfg, adb, bridge, sheet, analyzer, run, target, route, memory: mem }) {
     this.cfg = cfg;
     this.route = route || null;
     this.routeScreens = (route && route.screens) || {};
     this.observedText = new Map();     // screenId -> strings read off that screen
     this.routeScreenFor = new Map();   // screenId -> name in the route map
     this.recoveries = 0;
+    this.mem = mem || null;
+    this.restarts = 0;
+    this.wrongAppSkips = 0;
+    this.maxRestarts = 3;
     this.langMismatchChecked = false;
     this.adb = adb;
     this.bridge = bridge;
@@ -299,24 +310,120 @@ class Crawler {
 
   /**
    * A scan checking the wrong column reports almost every string as a defect.
-   * The per-string findings already say so, but a hundred of them buries the
-   * real ones — so say it once, loudly, as soon as a screen makes it obvious.
+   *
+   * This used to warn after the fact, once the findings were already in — which
+   * meant a run against the wrong language produced a page of confident
+   * nonsense with an explanation buried in the log underneath it. Nothing
+   * downstream can be trusted once the language is wrong, so the run stops
+   * instead, before the vision pass has been paid for and before a single
+   * false finding is recorded.
    */
-  checkLanguageMismatch(issues) {
-    if (this.langMismatchChecked) return true;
-    const wrong = issues.filter((i) => i.type === 'wrong_language' && i.matchedLanguage);
-    if (wrong.length < 4) return false;
+  detectLanguageMismatch(staticIssues) {
+    const wrong = staticIssues.filter((i) => i.type === 'wrong_language' && i.matchedLanguage);
+    if (wrong.length < 3) return null;
 
     const tally = new Map();
     for (const i of wrong) tally.set(i.matchedLanguage, (tally.get(i.matchedLanguage) || 0) + 1);
     const [lang, n] = [...tally.entries()].sort((a, b) => b[1] - a[1])[0];
-    if (n < 4) return false;
+    if (n < 3) return null;
+    return { lang, n };
+  }
 
-    this.langMismatchChecked = true;
-    const msg = `The game appears to be running in "${lang}" but the scan is checking the "${this.target.header}" column — ${n} strings on the first screen matched ${lang}. Switch the game's language or pick the matching column, or nearly every finding will be a false positive.`;
-    this.run.log(msg, 'warn');
+  /** Turn a detected mismatch into an actionable stop. */
+  abortForLanguage({ lang, n }) {
+    // Naming the column they should have picked is the difference between
+    // "something is wrong" and "click this instead".
+    const column = this.sheet.languages.find(
+      (l) => l.header === lang || l.code === lang || String(l.header).toLowerCase() === String(lang).toLowerCase()
+    );
+    const fix = column
+      ? `Set Language to "${column.header}" and scan again, or switch the game to ${this.target.header}.`
+      : `Switch the game to ${this.target.header}, or add a "${lang}" column to the sheet.`;
+
+    const msg =
+      `Stopped: the game is running in "${lang}" but the scan was set to check "${this.target.header}". ` +
+      `${n} strings on the first screen matched ${lang}, so every finding would be a false positive. ${fix}`;
+
+    this.run.log(msg, 'error');
     this.run.warnings.push(msg);
-    return true;
+    const err = new Error(msg);
+    err.languageMismatch = { detected: lang, expected: this.target.header, suggestColumn: column ? column.header : '' };
+    throw err;
+  }
+
+  /**
+   * Does the sheet say this exact string belongs in the column under test?
+   * If so, no amount of "it looks Portuguese" makes it a language defect —
+   * Portuguese is what the Portuguese column is supposed to contain.
+   */
+  sheetAgreesWithTarget(text) {
+    const raw = String(text || '').trim();
+    if (!raw || !this.target || !this.target.header) return false;
+    const header = this.target.header;
+    const source = this.target.sourceHeader;
+
+    const hits = this.sheet.lookupExact(raw).filter((h) => h.header !== '__key__');
+
+    // 2. The string is what the column under test is supposed to contain.
+    if (hits.some((h) => h.header === header)) return true;
+
+    // 3. It is the source string. Whether that is a defect depends entirely on
+    //    what the sheet holds for the same key — the same judgement a tester
+    //    makes by looking across the row.
+    const srcHit = source && hits.find((h) => h.header === source);
+    if (srcHit) {
+      const expected = srcHit.entry.values[header];
+      // Nothing to translate to, or the translation *is* the source: the build
+      // is showing exactly what the sheet says. Not a build defect.
+      if (!expected || !expected.trim()) return true;
+      if (norm(expected) === norm(srcHit.entry.values[source] || '')) return true;
+      return false;   // a real translation exists and is not being used
+    }
+
+    // Vision transcribes from pixels, so allow for a stray character.
+    const fuzzy = this.sheet.lookupFuzzy(raw, { limit: 3 }) || [];
+    return fuzzy.some((f) => f.header === header && f.score >= 0.9);
+  }
+
+  /** Is the app under test the thing actually on screen right now? */
+  async appIsInForeground() {
+    const pkg = (this.cfg.androidPackage || '').trim();
+    if (!this.adb || !pkg) return true;      // nothing to compare against
+    try {
+      const cur = await this.adb.currentActivity();
+      return cur.package === pkg;
+    } catch {
+      return true;                            // cannot tell; do not block the run
+    }
+  }
+
+  /**
+   * Refuse to analyse anything that is not the app under test.
+   *
+   * Without this the crawler happily captured the launcher, the Play Store, or
+   * whatever an ad had opened, and reported its strings against the sheet —
+   * confident, detailed findings about the wrong application.
+   */
+  async ensureAppInForeground() {
+    const pkg = (this.cfg.androidPackage || '').trim();
+    if (!this.adb || !pkg) return true;
+    // One read, then reason about it — asking twice can report a package that
+    // has already changed underneath us.
+    let cur = await this.adb.currentActivity().catch(() => ({ package: '' }));
+    if (cur.package === pkg) return true;
+    this.run.log(`${cur.package || 'Something else'} is in front instead of ${pkg} — getting back to the game.`, 'warn');
+
+    // Back out of whatever it is, then resume the app if that was not enough.
+    await this.dismissOverlays(2);
+    if (await this.appIsInForeground()) return true;
+
+    await this.adb.launch(pkg);
+    await sleep(3000);
+    if (await this.appIsInForeground()) return true;
+
+    cur = await this.adb.currentActivity().catch(() => ({ package: '' }));
+    this.run.log(`Could not get back to ${pkg} — ${cur.package || 'nothing'} is in front.`, 'error');
+    return false;
   }
 
   /** The app strands itself sometimes; the route says how to get it back. */
@@ -451,6 +558,41 @@ class Crawler {
     return { sig: this.signature(cap), cap };
   }
 
+  /**
+   * Games open with things in the way: an interstitial ad, a daily reward, a
+   * rate-us prompt. Back usually clears them, and doing so is much cheaper than
+   * a restart — and unlike a restart it does not put a *fresh* ad on screen.
+   */
+  async dismissOverlays(max = 3) {
+    if (!this.adb) return false;
+    // Past runs may already know what clears this app's launch interstitial.
+    if (this.mem && memory.bestDismissal(this.mem, 'launch_interruption') === 'back') max = Math.max(max, 2);
+    for (let i = 0; i < max; i++) {
+      const pkg = (this.cfg.androidPackage || '').trim();
+      if (pkg) {
+        // An ad can hand control to a browser or another activity entirely.
+        const cur = await this.adb.currentActivity().catch(() => ({ package: '' }));
+        if (cur.package && cur.package !== pkg) {
+          this.run.log(`${cur.package} is in front of the game — backing out of it.`, 'warn');
+        }
+      }
+      await this.goBack();
+      await sleep(this.cfg.settleMs);
+      const { sig } = await this.currentSig();
+      if (sig === this.rootSig) {
+        if (this.mem) {
+          memory.rememberObstacle(this.mem, {
+            kind: 'launch_interruption',
+            hint: `cleared after ${i + 1} back press${i ? 'es' : ''}`,
+            dismissal: 'back',
+          });
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+
   async resetToRoot() {
     // 1. cheap: back out until we recognise the root
     for (let i = 0; i < 6; i++) {
@@ -459,19 +601,63 @@ class Crawler {
       await this.goBack();
       await sleep(this.cfg.settleMs);
     }
-    // 2. expensive: restart the app
+
+    // 2. still lost — try clearing whatever is on top before reaching for the
+    //    hammer. A launch-time ad is the usual reason Back alone did not work.
+    if (await this.dismissOverlays()) return true;
+
+    // 3. bring the app forward without killing it. A LAUNCHER intent resumes
+    //    the existing task, so state, session and position survive — and it
+    //    does not trigger a fresh launch ad the way a cold start does.
     if (this.adb && this.cfg.androidPackage) {
-      this.run.log(`Restarting ${this.cfg.androidPackage} to get back to the first screen.`);
+      await this.adb.launch(this.cfg.androidPackage);
+      await sleep(1500);
+      await this.dismissOverlays(1);
+      const { sig: resumed } = await this.currentSig();
+      if (resumed === this.rootSig) return true;
+    }
+
+    // 4. last resort: a cold restart. Kept behind the gentler attempt above
+    //    because force-stopping is what "it closed my game" looks like, and it
+    //    is capped because a fresh interstitial on every launch would
+    //    otherwise loop forever.
+    if (this.adb && this.cfg.androidPackage && this.restarts < this.maxRestarts) {
+      this.restarts += 1;
+      this.run.log(`Restarting ${this.cfg.androidPackage} to get back to the first screen (${this.restarts}/${this.maxRestarts}).`);
       await this.adb.forceStop(this.cfg.androidPackage);
       await sleep(1200);
       await this.adb.launch(this.cfg.androidPackage);
       await sleep(4000);
+      // A cold start can fail outright — the app crashes on boot, or the
+      // launcher never hands over. Continuing here is what led to scanning
+      // the Play Store, so confirm the app is actually in front.
+      if (!(await this.appIsInForeground())) {
+        this.run.log(`${this.cfg.androidPackage} did not come back after the restart.`, 'error');
+        return false;
+      }
       await this.settle();
-      const { sig } = await this.currentSig();
+
+      let { sig } = await this.currentSig();
       if (sig === this.rootSig) return true;
-      // a fresh launch may legitimately land somewhere new (a daily popup, say)
+
+      // A launch-time ad lands here every time. Clear it before concluding
+      // that the app simply starts somewhere new.
+      if (await this.dismissOverlays(2)) return true;
+      ({ sig } = await this.currentSig());
+      if (sig === this.rootSig) return true;
+
+      // Genuinely a different first screen (a daily popup, an A/B variant).
+      this.run.log('The app started on a different screen; treating that as the new starting point.', 'warn');
       this.rootSig = sig;
       return true;
+    }
+
+    if (this.restarts >= this.maxRestarts) {
+      this.run.log(
+        `Restarted ${this.restarts} times without getting back to a known screen — something keeps appearing on launch ` +
+        '(an ad or a daily popup). Carrying on from the current screen instead of restarting again.',
+        'warn'
+      );
     }
     return false;
   }
@@ -520,6 +706,21 @@ class Crawler {
   }
 
   async analyzeScreen(cap, screenId, depth, pathLabels) {
+    // Never spend a vision call, or file findings, against something that is
+    // not the app under test.
+    if (!(await this.ensureAppInForeground())) {
+      this.wrongAppSkips = (this.wrongAppSkips || 0) + 1;
+      this.run.log(`Skipped ${screenId}: the app under test was not on screen.`, 'warn');
+      if (this.wrongAppSkips >= 3) {
+        throw new Error(
+          `Stopped: ${this.cfg.androidPackage} kept leaving the foreground and could not be brought back. ` +
+          'Check the build launches and stays open on the device, then scan again.'
+        );
+      }
+      return;
+    }
+    this.wrongAppSkips = 0;
+
     const file = this.run.saveScreenshot(screenId, cap.png);
 
     const ctx = {
@@ -541,6 +742,15 @@ class Crawler {
         rtl: this.target.rtl,
         expectsNonLatin: this.target.expectsNonLatin,
       });
+    }
+
+    // The deterministic pass has already matched strings against every column,
+    // so it knows what language is actually on screen. Ask it before spending
+    // a vision call, and before any of this screen's findings are kept.
+    if (!this.langMismatchChecked) {
+      this.langMismatchChecked = true;
+      const mismatch = this.detectLanguageMismatch(staticIssues);
+      if (mismatch) this.abortForLanguage(mismatch);
     }
 
     // 2. sheet context for the vision pass
@@ -594,7 +804,7 @@ class Crawler {
       }
     }
 
-    const issues = [
+    let issues = [
       ...staticIssues,
       ...aiStatic,
       ...(vision.issues || []).map((i) => ({
@@ -611,8 +821,31 @@ class Crawler {
       })),
     ].map((i) => ({ ...i, screenId, screenFile: file, scene: ctx.scene, depth, path: pathLabels }));
 
-    const deduped = dedupe(issues);
-    this.langMismatchChecked = this.checkLanguageMismatch(deduped);
+    // The vision pass judges by eye. Without the bridge it is handed no sheet
+    // data at all, so its language verdicts are guesses about a book it has not
+    // read — and it will call a legitimate target-language string "the wrong
+    // language" because it looks foreign. The sheet is the authority, so every
+    // such verdict is checked against it before being kept.
+    const verified = [];
+    let overruled = 0;
+    for (const i of issues) {
+      if (i.source === 'vision' && LANGUAGE_CLAIMS.has(i.type) && this.sheetAgreesWithTarget(i.text)) {
+        overruled += 1;
+        continue;
+      }
+      verified.push(i);
+    }
+    if (overruled) {
+      this.run.log(`Dropped ${overruled} vision finding${overruled === 1 ? '' : 's'} that the sheet contradicts — the text is in the "${this.target.header}" column.`);
+    }
+    issues = verified;
+
+    let deduped = dedupe(issues);
+    if (this.mem) {
+      const { kept, removed } = memory.filterDismissed(this.mem, deduped);
+      if (removed) this.run.log(`Ignored ${removed} finding${removed === 1 ? '' : 's'} you dismissed on an earlier scan.`);
+      deduped = kept;
+    }
     this.run.addIssues(deduped);
     this.run.addScreen({
       id: screenId,
@@ -719,6 +952,58 @@ class Crawler {
 
   // ── main loop ──────────────────────────────────────────────────────────
 
+  /**
+   * Bring the app under test to the front before anything is captured.
+   *
+   * Deliberately does not force-stop when it is already running: a tester may
+   * have signed in, picked a save slot or dismissed a first-run flow, and
+   * throwing that away would make the scan harder to set up, not easier. It
+   * only launches when something else is in front.
+   *
+   * With no package configured there is nothing to open, and the run will
+   * scan whatever is on screen — which is legitimate (the Unity editor, a
+   * build already running) but is worth saying out loud, because silently
+   * scanning the launcher looks like a broken scan.
+   */
+  async openAppUnderTest() {
+    const pkg = (this.cfg.androidPackage || '').trim();
+    let current = { package: '', activity: '' };
+    try { current = await this.adb.currentActivity(); } catch { /* asked below anyway */ }
+
+    if (!pkg) {
+      this.run.log(
+        `No Android package set — scanning whatever is on screen right now (${current.package || 'unknown app'}). ` +
+        'Set "Android package" to have the scan open your build itself.',
+        'warn'
+      );
+      return;
+    }
+
+    if (current.package === pkg) {
+      this.run.log(`${pkg} is already in the foreground.`);
+      return;
+    }
+
+    this.run.log(`Foreground app is ${current.package || 'unknown'} — launching ${pkg}.`);
+    try {
+      await this.adb.launch(pkg);
+      await sleep(4000);
+      const now = await this.adb.currentActivity();
+      if (now.package === pkg) {
+        this.run.log(`${pkg} is up (${now.activity}).`);
+      } else {
+        // Better a loud warning than a page of findings about the wrong app.
+        this.run.log(
+          `Asked Android to open ${pkg} but ${now.package || 'nothing'} is in front. ` +
+          'Is the package name right, and is that build installed?',
+          'error'
+        );
+      }
+    } catch (e) {
+      this.run.log(`Could not launch ${pkg}: ${e.message}`, 'error');
+    }
+  }
+
   async start() {
     this.run.status = 'running';
     this.run.emit('status', { status: 'running', mode: this.mode });
@@ -732,6 +1017,26 @@ class Crawler {
       } catch (e) {
         this.run.log(`Could not read the screen size: ${e.message}`, 'warn');
       }
+    }
+
+    // Open the app the run is about.
+    //
+    // This used to be missing entirely: androidPackage was consulted only when
+    // backtracking got lost, so a scan simply captured whatever happened to be
+    // in the foreground — the launcher, or the Play Store — and dutifully
+    // reported its strings against the sheet. If a package is named, it is the
+    // subject of the scan and has to be on screen before the first capture.
+    if (this.adb) {
+      await this.openAppUnderTest();
+    }
+
+    // The app may open straight into an ad. Analysing that as screen-001 makes
+    // the ad the root, and then every later reset tries to return to it.
+    if (this.adb) {
+      const { sig } = await this.currentSig();
+      this.rootSig = sig;                 // so dismissOverlays has something to compare
+      await this.dismissOverlays(2);
+      this.rootSig = null;
     }
 
     if (this.route && this.cfg.routeSetLanguage !== false) {

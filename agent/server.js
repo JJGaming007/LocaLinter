@@ -17,7 +17,7 @@ const { URL } = require('url');
 const config = require('./lib/config');
 const { Adb } = require('./lib/adb');
 const { Bridge } = require('./lib/bridge');
-const { SheetIndex, RTL_CODES } = require('./lib/sheet');
+const { SheetIndex, RTL_CODES, norm } = require('./lib/sheet');
 const { ClaudeAnalyzer } = require('./lib/claude');
 const { Crawler } = require('./lib/crawler');
 const store = require('./lib/store');
@@ -25,6 +25,8 @@ const routeMaps = require('./lib/routes');
 const paths = require('./lib/paths');
 const tools = require('./lib/tools');
 const autostart = require('./lib/autostart');
+const google = require('./lib/google');
+const memory = require('./lib/memory');
 
 const PORT = Number(process.env.PORT || 8790);
 const HOST = '127.0.0.1';
@@ -32,16 +34,20 @@ const VERSION = '1.0.0';
 
 // ── helpers ───────────────────────────────────────────────────────────────
 
+/**
+ * Deliberately no Access-Control-Allow-Origin.
+ *
+ * The web build served the UI from a different origin, so this had to answer
+ * `*` — and, once Chrome's private-network rules landed, Allow-Private-Network
+ * too. The app now serves its own UI, so every legitimate call is same-origin
+ * and needs no CORS header at all.
+ *
+ * Restoring those headers would be a real hole rather than a convenience:
+ * /api/auth/token hands back a live Google access token, so `*` would let any
+ * page you happened to visit read it straight off loopback.
+ */
 function cors(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'content-type');
-  // LocaLinter is served over https while this agent listens on loopback, so
-  // Chrome treats every call as a public-to-private request and blocks it
-  // unless the preflight is answered with this. Without it the browser only
-  // reports a failed fetch, which reads as "the agent is not running" even
-  // though it is up and answering curl.
-  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  res.setHeader('Vary', 'Origin');
 }
 
 function json(res, status, body) {
@@ -132,6 +138,36 @@ const routes = {
     return found ? { found: true, ...found } : { found: false, downloadFrom: tools.ZIP_URL };
   },
 
+  // ── Google sign-in (installed-app flow) ──
+  // The UI never sees the refresh token; it asks for an access token and gets
+  // one that is already valid, renewed here when needed.
+  'GET /api/auth/session': async () => ({
+    configured: google.configured(),
+    session: google.session(),
+    flow: google.flow(),
+  }),
+
+  'POST /api/auth/start': async (req) => {
+    const body = await readBody(req);
+    google.begin({ port: PORT, hint: body.hint || '' });
+    return { ok: true };
+  },
+
+  'GET /api/auth/token': async () => {
+    const auth = await google.token();
+    if (!auth) {
+      const err = new Error('Not signed in.');
+      err.status = 401;
+      throw err;
+    }
+    return { access_token: auth.access_token, expires_at: auth.expires_at, user: auth.user };
+  },
+
+  'POST /api/auth/signout': async () => {
+    await google.signOut();
+    return { ok: true };
+  },
+
   // Start-at-login. The browser cannot launch this process, so the next best
   // thing is letting the tester ask the OS to do it for them, once.
   'GET /api/autostart': async () => autostart.status(),
@@ -196,6 +232,13 @@ const routes = {
       err.status = 400;
       throw err;
     }
+    // Fail here rather than after a minute of crawling that ends in a 401.
+    const keyProblem = config.keyLooksWrong(cfg.apiKey, cfg.baseUrl);
+    if (keyProblem) {
+      const err = new Error(`${keyProblem} Get one from console.anthropic.com and save it again.`);
+      err.status = 400;
+      throw err;
+    }
     if (!body.sheet || !Array.isArray(body.sheet.headers) || !Array.isArray(body.sheet.rows)) {
       const err = new Error('No localization sheet was sent. Load a sheet in LocaLinter first.');
       err.status = 400;
@@ -209,10 +252,24 @@ const routes = {
       throw err;
     }
 
-    const target =
-      sheet.languageByCodeOrHeader(body.targetLanguage) ||
-      sheet.languages.find((l) => l.code !== 'en') ||
-      sheet.languages[0];
+    // A language was asked for explicitly, so an unresolvable one is an error,
+    // not an invitation to guess. Falling back silently meant a scan could
+    // check a completely different column from the one selected — and then
+    // report every string on screen as belonging to the wrong language.
+    let target;
+    if (body.targetLanguage) {
+      target = sheet.languageByCodeOrHeader(body.targetLanguage);
+      if (!target) {
+        const err = new Error(
+          `The sheet has no column matching "${body.targetLanguage}". ` +
+          `It has: ${sheet.languages.map((l) => l.header).join(', ') || 'no language columns'}.`
+        );
+        err.status = 400;
+        throw err;
+      }
+    } else {
+      target = sheet.languages.find((l) => l.code !== 'en') || sheet.languages[0];
+    }
     if (!target) {
       const err = new Error('The sheet has no language columns.');
       err.status = 400;
@@ -251,6 +308,97 @@ const routes = {
   },
 
   'GET /api/runs': async () => ({ runs: store.listRuns() }),
+
+  // Past runs and their screenshots pile up with no way to be rid of them.
+  'POST /api/runs/clear': async () => store.clearRuns(),
+
+  /**
+   * Explain what the scan would decide about one string, and why.
+   *
+   * The judgement is several rules deep and most of them end in silence, so
+   * "why did it flag this / why did it not" was unanswerable without reading
+   * the source. This answers it against the sheet actually loaded.
+   */
+  'POST /api/sheet/explain': async (req) => {
+    const body = await readBody(req);
+    if (!body.sheet || !Array.isArray(body.sheet.headers)) {
+      throw Object.assign(new Error('Load a sheet first.'), { status: 400 });
+    }
+    const sheet = new SheetIndex(body.sheet.headers, body.sheet.rows || []);
+    const target = body.targetLanguage
+      ? sheet.languageByCodeOrHeader(body.targetLanguage)
+      : sheet.languages.find((l) => l.code !== 'en');
+    if (!target) throw Object.assign(new Error('No such language column.'), { status: 400 });
+
+    const text = String(body.text || '').trim();
+    const sourceHeader = sheet.englishCol ? sheet.englishCol.header : null;
+    const hits = sheet.lookupExact(text).filter((h) => h.header !== '__key__');
+    const rows = hits.slice(0, 5).map((h) => ({
+      key: h.entry.key,
+      row: h.entry.rowNumber,
+      matchedColumn: h.header,
+      source: sourceHeader ? h.entry.values[sourceHeader] : '',
+      target: h.entry.values[target.header] || '',
+    }));
+
+    let verdict = 'reported';
+    let reason;
+    if (!text) {
+      verdict = 'ignored'; reason = 'Empty string.';
+    } else if (hits.some((h) => h.header === target.header)) {
+      verdict = 'ignored';
+      reason = `This is exactly what the "${target.header}" column contains, so it is correct.`;
+    } else if (sourceHeader && hits.some((h) => h.header === sourceHeader)) {
+      const hit = hits.find((h) => h.header === sourceHeader);
+      const expected = hit.entry.values[target.header] || '';
+      if (!expected.trim()) {
+        verdict = 'noted';
+        reason = `Found in "${sourceHeader}" (key ${hit.entry.key}), but "${target.header}" is empty — the build has nothing else to show. A sheet gap, not a build defect.`;
+      } else if (norm(expected) === norm(hit.entry.values[sourceHeader] || '')) {
+        verdict = 'ignored';
+        reason = `Found in "${sourceHeader}" (key ${hit.entry.key}), and "${target.header}" holds the same text — the build matches the sheet.`;
+      } else {
+        reason = `Found in "${sourceHeader}" (key ${hit.entry.key}) while "${target.header}" says "${expected}" — the build is not using the translation.`;
+      }
+    } else {
+      const fuzzy = (sheet.lookupFuzzy(text, { limit: 3 }) || []).map((f) => ({
+        key: f.entry.key, row: f.entry.rowNumber, matchedColumn: f.header,
+        score: Math.round(f.score * 100), value: f.entry.values[f.header],
+      }));
+      reason = fuzzy.length
+        ? 'No exact match anywhere in the sheet. Closest entries are listed — if none is right, the string was probably hardcoded.'
+        : 'Not in the sheet in any language — probably hardcoded and never sent for translation.';
+      return { text, targetHeader: target.header, verdict, reason, rows, near: fuzzy };
+    }
+    return { text, targetHeader: target.header, verdict, reason, rows };
+  },
+
+  // ── what the agent remembers about an app ──
+  'GET /api/memory': async (req, res, url) => {
+    const pkg = url.searchParams.get('package') || config.load().androidPackage;
+    return { memory: memory.load(pkg) };
+  },
+
+  // A human saying "that is not a defect" is the most valuable signal there is,
+  // so it is stored against the app and respected on every later run.
+  'POST /api/memory/dismiss': async (req) => {
+    const body = await readBody(req);
+    const pkg = body.package || config.load().androidPackage;
+    if (!pkg) throw Object.assign(new Error('Set an Android package first — memory is stored per app.'), { status: 400 });
+    const mem = memory.load(pkg);
+    if (body.undo) memory.undismiss(mem, body.issue || {});
+    else memory.dismiss(mem, body.issue || {}, body.reason || '');
+    memory.save(mem);
+    return { memory: mem };
+  },
+
+  'POST /api/memory/clear': async (req) => {
+    const body = await readBody(req);
+    const pkg = body.package || config.load().androidPackage;
+    const mem = { ...memory.load(pkg), runs: 0, notes: '', obstacles: [], dismissed: [], screens: {} };
+    memory.save(mem);
+    return { memory: mem };
+  },
 };
 
 function pickOverrides(options) {
@@ -351,7 +499,15 @@ async function startScan({ run, cfg, sheet, target, mode, serial, route }) {
     } catch { /* Unity Localization not installed — fine */ }
   }
 
-  const analyzer = new ClaudeAnalyzer({ apiKey: cfg.apiKey, model: cfg.model, effort: cfg.effort, baseUrl: cfg.baseUrl, extraChecks: cfg.extraChecks });
+  // What earlier runs learned about this app, handed to the model as context
+  // and to the crawler as hints about what gets in the way.
+  const mem = memory.load(cfg.androidPackage);
+  const analyzer = new ClaudeAnalyzer({
+    apiKey: cfg.apiKey, model: cfg.model, effort: cfg.effort, baseUrl: cfg.baseUrl,
+    extraChecks: cfg.extraChecks,
+    memory: memory.promptContext(mem),
+  });
+  if (mem.runs) run.log(`Recalling ${mem.runs} previous scan${mem.runs === 1 ? '' : 's'} of ${cfg.androidPackage}.`);
   if (cfg.extraChecks) run.log(`Applying extra checks from the run settings.`);
   if (cfg.baseUrl) run.log(`Model endpoint: ${cfg.baseUrl}`);
   run.log(`Using ${cfg.model} at ${cfg.effort} effort.`);
@@ -397,6 +553,58 @@ async function startScan({ run, cfg, sheet, target, mode, serial, route }) {
     run.usage = analyzer.usage;
     throw e;
   }
+}
+
+// ── static UI ─────────────────────────────────────────────────────────────
+
+// Set by the desktop shell to the folder holding index.html. Unset when the
+// agent runs on its own, in which case it serves the API and nothing else.
+const UI_DIR = process.env.LOCALINTER_UI_DIR ? path.resolve(process.env.LOCALINTER_UI_DIR) : '';
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+};
+
+// The UI folder is the whole install, which also contains the agent's own
+// source and its config.json — and that file holds the Anthropic API key.
+// Only the front-end may be served; everything else is off limits even though
+// it sits inside UI_DIR.
+const UI_DENY = new Set(['agent', 'node_modules', 'desktop', 'api', '.git']);
+
+function escapeHtmlText(s) {
+  return String(s).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+function serveUi(pathname, res) {
+  const rel = pathname === '/' ? 'index.html' : decodeURIComponent(pathname).replace(/^\/+/, '');
+  const file = path.resolve(UI_DIR, rel);
+  // Never serve outside the UI folder, however the path was spelled.
+  if (file !== UI_DIR && !file.startsWith(UI_DIR + path.sep)) return false;
+
+  const segments = path.relative(UI_DIR, file).split(/[\\/]/);
+  if (segments.some((s) => UI_DENY.has(s) || s.startsWith('.'))) return false;
+  // An extension we do not recognise is not part of the front-end.
+  if (!MIME[path.extname(file).toLowerCase()]) return false;
+
+  if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return false;
+
+  res.writeHead(200, {
+    'content-type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream',
+    'cache-control': 'no-cache',
+  });
+  fs.createReadStream(file).pipe(res);
+  return true;
 }
 
 // ── server ────────────────────────────────────────────────────────────────
@@ -474,6 +682,50 @@ const server = http.createServer(async (req, res) => {
     return json(res, 405, { error: 'method not allowed' });
   }
 
+  // ── OAuth landing ──
+  // Google sends the *system browser* here, not the app window, so this has to
+  // answer with a human-readable page rather than JSON.
+  if (pathname === '/oauth/callback' && req.method === 'GET') {
+    const done = (ok, heading, detail) => {
+      res.writeHead(ok ? 200 : 400, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(`<!doctype html><meta charset="utf-8"><title>LocaLinter</title>
+<style>body{background:#0a0a0b;color:#ecebe8;font:15px/1.6 'Segoe UI',system-ui,sans-serif;
+display:grid;place-items:center;height:100vh;margin:0;text-align:center}
+h1{font-size:1.35rem;font-weight:500;margin:0 0 .4rem;color:${ok ? '#74a06a' : '#d4594f'}}
+p{color:#8b877f;margin:0;max-width:44ch}</style>
+<div><h1>${heading}</h1><p>${detail}</p></div>`);
+    };
+
+    const error = url.searchParams.get('error');
+    if (error) {
+      const state = google.fail(error);
+      done(false, state.status === 'cancelled' ? 'Sign-in cancelled' : 'Sign-in failed',
+        'Nothing was changed. You can close this tab and go back to LocaLinter.');
+      return;
+    }
+    try {
+      const auth = await google.exchange(
+        url.searchParams.get('code'),
+        url.searchParams.get('state'),
+        PORT
+      );
+      console.log(`Signed in as ${auth.user && auth.user.email}`);
+      done(true, 'Signed in', 'You can close this tab and go back to LocaLinter.');
+    } catch (e) {
+      done(false, 'Sign-in failed', escapeHtmlText(e.message));
+    }
+    return;
+  }
+
+  // ── the app itself ──
+  // Serving the UI from this same origin is what makes the desktop build
+  // simple: the window loads http://127.0.0.1:8790 rather than a file:// URL,
+  // so every /api call is same-origin (no CORS, no private-network preflight)
+  // and Google sign-in still sees a real http origin it will accept.
+  if (!handler && UI_DIR && req.method === 'GET') {
+    if (serveUi(pathname, res)) return;
+  }
+
   if (!handler) return json(res, 404, { error: `no route for ${req.method} ${pathname}` });
 
   try {
@@ -526,15 +778,23 @@ if (cliFlag) {
 } else {
   server.listen(PORT, HOST, async () => {
     const cfg = config.load();
-    console.log(`LocaLinter agent ${VERSION} listening on http://${HOST}:${PORT}`);
+    // Inside the desktop app this is a service, not something you visit; run
+    // from a checkout it is still the standalone agent it always was.
+    const embedded = !!process.versions.electron;
+
+    console.log(`${embedded ? 'LocaLinter' : 'LocaLinter agent'} ${VERSION} — service on http://${HOST}:${PORT}`);
     console.log(`  data:     ${paths.DATA_DIR}`);
     const adb = await tools.resolveAdb(cfg);
-    console.log(`  adb:      ${adb ? `${adb.path} (${adb.source})` : 'NOT FOUND — the Device Scan tab can fetch it'}`);
+    console.log(`  adb:      ${adb ? `${adb.path} (${adb.source})` : 'NOT FOUND — Device scan can fetch it'}`);
     console.log(`  model:    ${cfg.model}`);
-    console.log(`  API key:  ${cfg.apiKey ? 'configured' : 'NOT SET — add it in the Device Scan tab'}`);
+    console.log(`  API key:  ${cfg.apiKey ? 'configured' : 'NOT SET — add it under Device scan'}`);
     console.log(`  bridge:   127.0.0.1:${cfg.bridgePort}`);
-    const auto = await autostart.status();
-    console.log(`  autostart: ${auto.enabled ? (auto.stale ? 'enabled (STALE — re-enable it)' : 'enabled') : 'off'}`);
-    console.log('Open LocaLinter in your browser and switch to the Device Scan tab.');
+    if (embedded) {
+      console.log('Window opening…');
+    } else {
+      const auto = await autostart.status();
+      console.log(`  autostart: ${auto.enabled ? (auto.stale ? 'enabled (STALE — re-enable it)' : 'enabled') : 'off'}`);
+      console.log('Open LocaLinter and switch to the Device Scan tab.');
+    }
   });
 }
