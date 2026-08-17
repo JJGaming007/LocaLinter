@@ -15,10 +15,13 @@
   --border-strong: #2a2a30;
   --border-hover: #35353c;
 
-  --text: #e9e7e3;
-  --text-2: #b9b6b0;
-  --muted: #78756f;
-  --faint: #56534e;
+  /* A four-step ramp. The old one bottomed out too dark — labels set in
+     --faint were effectively invisible on --panel, so every step below
+     --text has been lifted just enough to stay legible at 11px. */
+  --text: #ecebe8;
+  --text-2: #c6c2bb;
+  --muted: #8b877f;
+  --faint: #66625b;
 
   --accent: #d98a3d;
   --accent-hi: #eda354;
@@ -60,16 +63,27 @@ body {
   background: var(--bg);
   color: var(--text);
   line-height: 1.55;
-  font-size: 14px;
+  font-size: 14.5px;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
+
+/* Digits should line up in every column, count and meter in the app. */
+.mono, code, kbd, table, .stat-v, .badge, .row-num { font-variant-numeric: tabular-nums; }
 
 .hidden { display: none !important; }
 .v-hidden { visibility: hidden; pointer-events: none; }
 .accent-text { color: var(--accent); }
 
 ::selection { background: var(--accent-glow); color: #fff; }
+
+/* Keyboard users get a ring; mouse users never see one. */
+:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -90,7 +104,7 @@ body {
 
 .container {
   width: 100%;
-  max-width: 1160px;
+  max-width: 1240px;
   margin: 0 auto;
   padding: 2rem 2.25rem 6rem;
   display: flex;
@@ -159,10 +173,11 @@ body {
 .sb-label {
   display: block;
   font-family: var(--mono);
-  font-size: 0.6rem;
-  letter-spacing: 0.12em;
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--faint);
+  color: var(--muted);
   padding: 0 0.25rem;
   margin-bottom: 0.45rem;
 }
@@ -264,6 +279,7 @@ body {
 .badge {
   font-family: var(--mono);
   font-size: 0.63rem;
+  font-weight: 600;
   line-height: 1;
   padding: 0.22rem 0.36rem;
   border-radius: 3px;
@@ -272,12 +288,25 @@ body {
   border: 1px solid var(--border);
   min-width: 20px;
   text-align: center;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
 }
-.sb-item.active .badge {
-  background: rgba(217, 138, 61, 0.16);
-  color: var(--accent-hi);
-  border-color: var(--accent-line);
+/* A count is the whole point of these tabs, so it should say whether it is
+   good news before you read the number. Zero recedes; anything above zero
+   carries the same red the issue rows use. */
+.badge.is-clear {
+  background: rgba(116, 160, 106, 0.1);
+  color: var(--success);
+  border-color: rgba(116, 160, 106, 0.3);
 }
+.badge.has-issues {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: var(--danger-border);
+}
+/* The active tab's own badge keeps its meaning rather than going amber. */
+.sb-item.active .badge { border-color: var(--border-hover); }
+.sb-item.active .badge.is-clear { border-color: rgba(116, 160, 106, 0.45); }
+.sb-item.active .badge.has-issues { border-color: var(--danger); }
 
 /* ── Sidebar footer ── */
 .sb-foot {
@@ -316,44 +345,17 @@ body {
   padding: 0.05rem 0.28rem;
 }
 
-/* AI budget meter */
-.sb-budget {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--panel);
-  padding: 0.6rem 0.65rem 0.55rem;
-}
-.sb-budget-top { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
-.sb-budget-top .sb-label { margin-bottom: 0; padding: 0; }
-.sb-budget-figure { font-family: var(--mono); font-size: 0.66rem; color: var(--muted); }
-.sb-budget-figure b { color: var(--text); font-weight: 500; }
-
-.sb-meter {
-  height: 3px;
-  background: var(--panel-3);
-  border-radius: 99px;
-  overflow: hidden;
-  margin: 0.5rem 0 0.4rem;
-}
-.sb-meter-fill {
-  display: block;
-  height: 100%;
-  width: 0%;
-  background: var(--accent);
-  transition: width 0.4s ease;
-}
-.sb-meter-fill.warn { background: var(--warning); }
-.sb-meter-fill.over { background: var(--danger); }
-
-.sb-budget-sub {
+/* Agent presence — one line, mirrored from the device-scan tab */
+.sb-agent-row {
   display: flex;
-  justify-content: space-between;
-  gap: 0.5rem;
+  align-items: center;
+  padding: 0 0.15rem;
   font-family: var(--mono);
-  font-size: 0.62rem;
+  font-size: 0.63rem;
+  letter-spacing: 0.04em;
   color: var(--faint);
-  margin-top: 0.15rem;
 }
+.sb-agent.on { color: var(--text-2); }
 .sb-agent::before {
   content: '';
   display: inline-block;
@@ -446,15 +448,16 @@ body {
 #refresh-sheet-btn.is-loading svg { animation: spin 0.9s linear infinite; }
 
 /* ── Page head ── */
-.page-head { display: flex; flex-direction: column; gap: 0.15rem; }
+.page-head { display: flex; flex-direction: column; gap: 0.28rem; }
 .page-title {
   font-family: var(--serif);
-  font-size: 2rem;
-  font-weight: 400;
-  line-height: 1.15;
-  letter-spacing: -0.01em;
+  font-size: 2.05rem;
+  font-weight: 500;
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  color: var(--text);
 }
-.page-sub { font-size: 0.82rem; color: var(--muted); max-width: 66ch; }
+.page-sub { font-size: 0.85rem; line-height: 1.6; color: var(--muted); max-width: 68ch; }
 
 .container.has-results .page-head { margin-bottom: -0.25rem; }
 
@@ -496,11 +499,30 @@ body {
 
 .btn-secondary { background: var(--panel-2); }
 
-.btn-ghost { background: none; border-color: var(--border); color: var(--text-2); }
-.btn-ghost:hover { color: var(--danger); border-color: var(--danger-border); background: var(--danger-bg); }
+/* Quiet: reveals a panel or repeats an action, and should not compete with
+   the primary button beside it. This is the *only* colourless variant. */
+.btn-ghost { background: none; border-color: var(--border); color: var(--muted); }
+.btn-ghost:hover { background: var(--panel-2); border-color: var(--border-strong); color: var(--text); }
+/* A disclosure button that looks the same open and shut is not a control. */
+.btn-ghost.is-open { background: var(--accent-dim); border-color: var(--accent-line); color: var(--accent-hi); }
 
-.btn-danger { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger); }
-.btn-danger:hover { background: rgba(212, 89, 79, 0.18); border-color: var(--danger); }
+/* Destructive: reads red at rest, not only on hover. If you have to touch a
+   button to find out it deletes something, the colour is doing no work. */
+.btn-danger {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+.btn-danger:hover { background: rgba(212, 89, 79, 0.2); border-color: var(--danger); color: #e8776d; }
+.btn-danger svg { color: var(--danger); }
+/* Greyed out, a destructive button is not warning about anything yet. */
+.btn-danger:disabled {
+  background: var(--panel-2);
+  border-color: var(--border);
+  color: var(--faint);
+  opacity: 1;
+}
+.btn-danger:disabled svg { color: var(--faint); }
 
 .sm-btn { padding: 0.34rem 0.6rem; font-size: 0.74rem; }
 .btn-block { width: 100%; justify-content: center; }
@@ -522,13 +544,14 @@ body {
 .field-label {
   display: block;
   font-family: var(--mono);
-  font-size: 0.6rem;
-  letter-spacing: 0.12em;
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--faint);
+  color: var(--muted);
   margin-bottom: 0.35rem;
 }
-.field-help { font-size: 0.76rem; color: var(--muted); margin-bottom: 0.6rem; line-height: 1.55; }
+.field-help { font-size: 0.78rem; color: var(--muted); margin-bottom: 0.6rem; line-height: 1.6; }
 .field-input {
   width: 100%;
   background: var(--panel);
@@ -704,7 +727,11 @@ textarea.field-input { min-height: 96px; resize: vertical; line-height: 1.6; }
   white-space: nowrap;
   max-width: 42ch;
 }
-#loaded-content .btn { margin-left: auto; }
+/* The button group is pushed right as a unit — only the first one takes the
+   auto margin, or the two would drift apart. */
+#loaded-content .btn { margin-left: 0; }
+#loaded-content .btn:nth-last-of-type(2),
+#loaded-content .btn:only-of-type { margin-left: auto; }
 
 .link-sync-wrap {
   display: flex;
@@ -734,21 +761,26 @@ textarea.field-input { min-height: 96px; resize: vertical; line-height: 1.6; }
 .stat-pill {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
-  padding: 0.55rem 0.85rem;
-  min-width: 150px;
+  gap: 0.2rem;
+  padding: 0.6rem 0.9rem;
+  min-width: 152px;
   border: 1px solid var(--border);
+  border-left: 2px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--panel);
 }
+.stat-pill.danger { border-left-color: var(--danger); }
+.stat-pill.success { border-left-color: var(--success); }
+.stat-pill.neutral { border-left-color: var(--border-hover); }
 .stat-k {
   font-family: var(--mono);
-  font-size: 0.58rem;
-  letter-spacing: 0.12em;
+  font-size: 0.64rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--faint);
+  color: var(--muted);
 }
-.stat-v { font-family: var(--mono); font-size: 0.92rem; color: var(--text); }
+.stat-v { font-family: var(--mono); font-size: 1.02rem; font-weight: 500; color: var(--text); }
 .stat-pill.danger .stat-v { color: var(--danger); }
 .stat-pill.success .stat-v { color: var(--success); }
 .stat-pill.neutral .stat-v { color: var(--text); }
@@ -757,10 +789,11 @@ textarea.field-input { min-height: 96px; resize: vertical; line-height: 1.6; }
 .filter-item { display: flex; align-items: center; gap: 0.5rem; }
 .filter-item > label {
   font-family: var(--mono);
-  font-size: 0.6rem;
-  letter-spacing: 0.12em;
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--faint);
+  color: var(--muted);
 }
 .filter-item select,
 .ds-filters select,
@@ -855,10 +888,11 @@ select option { background: var(--panel-2); color: var(--text); }
 .search-opt-group.cols-group { align-items: flex-start; }
 .search-opt-label {
   font-family: var(--mono);
-  font-size: 0.6rem;
-  letter-spacing: 0.12em;
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--faint);
+  color: var(--muted);
   flex: 0 0 auto;
 }
 
@@ -879,14 +913,15 @@ select option { background: var(--panel-2); color: var(--text); }
   border-right: 1px solid var(--border);
   color: var(--muted);
   font-family: var(--font);
-  font-size: 0.72rem;
-  padding: 0.3rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 450;
+  padding: 0.34rem 0.7rem;
   cursor: pointer;
   transition: background var(--transition), color var(--transition);
 }
 .smode:last-child { border-right: none; }
 .smode:hover { color: var(--text); background: var(--panel-2); }
-.smode.active { background: var(--accent-dim); color: var(--accent-hi); }
+.smode.active { background: var(--accent-dim); color: var(--accent-hi); font-weight: 600; }
 
 .search-col-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; flex: 1; }
 .cols-grid { display: flex; flex-wrap: wrap; gap: 0.3rem; }
@@ -912,22 +947,34 @@ select option { background: var(--panel-2); color: var(--text); }
 
 .results-summary,
 .search-summary {
-  font-size: 0.76rem;
+  font-size: 0.79rem;
   color: var(--muted);
   padding: 0.5rem 0.1rem 0.75rem;
 }
-.srch-count { font-family: var(--mono); color: var(--text); }
+.results-summary strong,
+.search-summary strong { color: var(--text-2); font-weight: 500; }
+.srch-count { font-family: var(--mono); font-weight: 600; font-size: 0.9rem; color: var(--text); }
+.srch-of { color: var(--faint); }
 .srch-mode-tag {
   font-family: var(--mono);
   font-size: 0.64rem;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--accent);
+  background: var(--accent-dim);
   border: 1px solid var(--accent-line);
   border-radius: 3px;
-  padding: 0.05rem 0.3rem;
+  padding: 0.05rem 0.34rem;
 }
-mark.srch-hl { background: rgba(217, 138, 61, 0.28); color: var(--text); border-radius: 2px; padding: 0 1px; }
+mark.srch-hl {
+  background: rgba(217, 138, 61, 0.22);
+  box-shadow: inset 0 -1px 0 var(--accent);
+  color: var(--text);
+  font-weight: 500;
+  border-radius: 2px;
+  padding: 0 1px;
+}
 
 /* ============================================================
    TABLES
@@ -938,14 +985,15 @@ mark.srch-hl { background: rgba(217, 138, 61, 0.28); color: var(--text); border-
   border-radius: var(--radius-md);
   background: var(--panel);
   overflow: auto;
-  max-height: 70vh;
+  max-height: 72vh;
+  overscroll-behavior: contain;
 }
 
 table { width: 100%; border-collapse: collapse; }
 
 th, td {
   text-align: left;
-  padding: 0.6rem 0.85rem;
+  padding: 0.62rem 0.9rem;
   border-bottom: 1px solid var(--border);
   vertical-align: top;
 }
@@ -956,24 +1004,31 @@ th {
   z-index: 2;
   background: var(--panel-2);
   font-family: var(--mono);
-  font-size: 0.6rem;
-  font-weight: 500;
-  letter-spacing: 0.12em;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--faint);
+  color: var(--text-2);
   white-space: nowrap;
-  border-bottom: 1px solid var(--border-strong);
+  /* A collapsed border under a sticky header scrolls away with the body, so
+     the rule is drawn as an inset shadow instead and stays put. */
+  box-shadow: inset 0 -1px 0 var(--border-strong);
+  border-bottom: none;
 }
 
-td { font-size: 0.8rem; color: var(--text-2); }
+td { font-size: 0.815rem; line-height: 1.6; color: var(--text-2); }
 tbody tr { transition: background var(--transition); }
-tbody tr:hover { background: rgba(255, 255, 255, 0.018); }
+tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.012); }
+tbody tr:hover { background: rgba(217, 138, 61, 0.045); }
 tbody tr:last-child td { border-bottom: none; }
 
-td:first-child,
-#search-results-table td:first-child {
+/* The key column: mono, a shade brighter than the body, and never wrapped
+   unless wrap mode says so. Kept at plain-element specificity so the
+   .wrap-text rules below can actually override it. */
+td:first-child {
   font-family: var(--mono);
-  font-size: 0.74rem;
+  font-size: 0.75rem;
+  font-weight: 500;
   color: var(--text);
   white-space: nowrap;
 }
@@ -997,28 +1052,79 @@ td:first-child,
   max-width: 340px;
   display: block;
 }
-.table-wrapper.wrap-text .text-snippet { white-space: pre-wrap; overflow: visible; max-width: none; }
-.table-wrapper.wrap-text td { white-space: pre-wrap; word-break: break-word; }
 
-td.editable-cell { cursor: text; outline: none; border-left: 2px solid transparent; }
+/* ── Wrapped mode ──────────────────────────────────────────
+   Auto table layout sizes every column to its longest string, so a sheet
+   with a dozen languages runs off to the right no matter how the cells
+   wrap. Fixed layout makes the columns share the width instead, and the
+   text wraps inside them. `--cols` (set when the head is built) keeps a
+   floor under each column so a very wide sheet still scrolls rather than
+   squeezing every language into a vertical sliver. */
+.table-wrapper.wrap-text table {
+  table-layout: fixed;
+  min-width: calc(var(--cols, 4) * 104px);
+}
+.table-wrapper.wrap-text th,
+.table-wrapper.wrap-text td,
+.table-wrapper.wrap-text td:first-child,
+.table-wrapper.wrap-text .text-snippet {
+  white-space: pre-wrap;
+  overflow: visible;
+  max-width: none;
+  overflow-wrap: anywhere;   /* break only when a word genuinely cannot fit */
+  word-break: normal;
+}
+/* The key column earns a little more room than a translation column. */
+.table-wrapper.wrap-text th:first-child { width: 19%; }
+.table-wrapper.wrap-text #missing-table th:nth-child(2),
+.table-wrapper.wrap-text #results-table th:nth-child(2) { width: 12%; }
+.table-wrapper.wrap-text #missing-table th:nth-child(4) { width: 21%; }
+
+/* Editing writes straight back to the sheet, so the cell has to report what
+   happened. A 2px rule alone was too quiet for a write that already went
+   through — each state now tints the cell as well. */
+td.editable-cell { cursor: text; outline: none; border-left: 2px solid transparent; transition: background var(--transition), border-color var(--transition); }
 td.editable-cell:hover { background: var(--panel-2); }
 td.editable-cell:focus { background: var(--panel-2); border-left-color: var(--accent); }
-td.editable-cell.saving { border-left-color: var(--warning); opacity: 0.7; }
-td.editable-cell.saved { border-left-color: var(--success); }
-td.editable-cell.save-error { border-left-color: var(--danger); background: var(--danger-bg); }
+td.editable-cell.saving { border-left-color: var(--warning); background: rgba(201, 160, 74, 0.08); opacity: 0.75; }
+td.editable-cell.saved { border-left-color: var(--success); background: rgba(116, 160, 106, 0.12); }
+td.editable-cell.save-error { border-left-color: var(--danger); background: var(--danger-bg); color: var(--danger); }
 
-.success-state { text-align: center; padding: 3rem 1rem !important; color: var(--muted); }
-.success-state h3 {
+/* Two different outcomes wore the same grey here: "no issues found" is good
+   news, "no matches found" is just an empty result. Only the first is green. */
+.success-state,
+.empty-result { text-align: center; padding: 3rem 1rem !important; color: var(--muted); }
+.success-state h3,
+.empty-result h3 {
   font-family: var(--serif);
-  font-size: 1.2rem;
-  font-weight: 400;
+  font-size: 1.25rem;
+  font-weight: 500;
   color: var(--text);
   margin-bottom: 0.25rem;
 }
-.success-state p { font-size: 0.78rem; }
+.success-state p,
+.empty-result p { font-size: 0.78rem; }
+
+.success-state h3 { color: var(--success); }
+.success-state h3::before {
+  content: '✓';
+  font-family: var(--font);
+  margin-right: 0.45rem;
+  font-size: 0.9em;
+}
 
 /* Inline translation helpers in the missing-locales table */
 .inline-trans-cell { display: flex; gap: 0.4rem; align-items: center; }
+.inline-trans-result { display: flex; gap: 0.5rem; align-items: center; }
+/* A just-fetched translation is unsaved — green says "this is new and good",
+   not "this is stored". Editing it or saving clears the tint. */
+.inline-translation-input.is-new {
+  background: rgba(116, 160, 106, 0.1);
+  border-color: rgba(116, 160, 106, 0.35);
+  color: var(--success);
+}
+.inline-translation-input.is-new:focus { color: var(--text); border-color: var(--accent-line); }
+.inline-translate-btn.did-fail { border-color: var(--danger-border); color: var(--danger); background: var(--danger-bg); }
 .inline-translation-input {
   flex: 1;
   min-width: 120px;
@@ -1054,7 +1160,20 @@ td.editable-cell.save-error { border-left-color: var(--danger); background: var(
 .inline-copy-btn:hover,
 .inline-save-btn:hover,
 .translate-btn:hover { border-color: var(--accent-line); color: var(--accent-hi); }
-.inline-copy-btn.copied { border-color: var(--success); color: var(--success); }
+
+/* Of the three inline buttons, only Save writes to the live sheet — it is the
+   commit, so it carries the accent while Translate and Copy stay neutral. */
+.inline-save-btn { background: var(--accent-dim); border-color: var(--accent-line); color: var(--accent-hi); }
+.inline-save-btn:hover { background: rgba(217, 138, 61, 0.2); border-color: var(--accent); }
+
+/* …and both confirmations land on green. */
+.inline-copy-btn.copied,
+.inline-save-btn.saved {
+  background: rgba(116, 160, 106, 0.14);
+  border-color: var(--success);
+  color: var(--success);
+}
+.inline-save-btn.saved:disabled { opacity: 1; }
 
 /* ── Pagination ── */
 .results-pagination,
@@ -1235,6 +1354,19 @@ td.editable-cell.save-error { border-left-color: var(--danger); background: var(
 }
 .account-menu-item:hover { background: var(--panel-3); color: var(--text); }
 a.account-menu-item { text-decoration: none; }
+.account-menu-item svg { color: var(--faint); transition: color var(--transition); }
+.account-menu-item:hover svg { color: var(--muted); }
+
+/* Sign out ends the session; the two links above it only navigate. Ruled off
+   and tinted so it does not read as a third link. */
+.account-menu-danger {
+  color: var(--danger);
+  border-top: 1px solid var(--border);
+  margin-top: 0.15rem;
+}
+.account-menu-danger svg,
+.account-menu-danger:hover svg { color: var(--danger); }
+.account-menu-danger:hover { background: var(--danger-bg); color: #e8776d; }
 
 /* ============================================================
    QUICK TRANSLATOR
@@ -1299,6 +1431,19 @@ a.account-menu-item { text-decoration: none; }
 
 .qt-output-wrap { position: relative; }
 #qt-output { background: var(--panel-2); color: var(--text-2); }
+
+/* Failures live here, not in the output box — that box is copyable. */
+.qt-error {
+  margin-top: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--danger-border);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius-sm);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
 .qt-copy-btn {
   position: absolute;
   top: 0.4rem;
@@ -1397,6 +1542,7 @@ a.account-menu-item { text-decoration: none; }
   gap: 0.55rem;
   background: var(--panel-2);
   border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--accent);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-md);
   color: var(--text);
@@ -1405,28 +1551,35 @@ a.account-menu-item { text-decoration: none; }
   animation: toastIn 0.2s ease;
 }
 .toast-dot { width: 6px; height: 6px; border-radius: 99px; background: var(--accent); flex: 0 0 6px; }
+/* A 6px dot is not enough to tell a failure from a confirmation at a glance,
+   so the edge and the ground carry it too. */
+.toast.success { border-left-color: var(--success); background: rgba(116, 160, 106, 0.08); }
 .toast.success .toast-dot { background: var(--success); }
+.toast.error {
+  background: rgba(212, 89, 79, 0.1);
+  border-color: var(--danger-border);
+  border-left-color: var(--danger);
+}
 .toast.error .toast-dot { background: var(--danger); }
 .toast.hide { animation: toastOut 0.2s ease forwards; }
 @keyframes toastIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(6px); } }
 
 /* ============================================================
-   HOME VIEW
-   Home is the source screen: the file bar plus every way to open
-   another sheet. The report itself stands down.
+   SOURCE PANEL STATES
+   Loaded, the panel is a one-line bar. "Change sheet" expands the
+   full picker back underneath it without leaving the results.
    ============================================================ */
-body.view-home #results-container { display: none !important; }
-body.view-home .dropzone.file-loaded #drop-content-idle {
+body.picker-open .dropzone.file-loaded #drop-content-idle {
   display: block;
   border-top: 1px solid var(--border);
 }
-body.view-home .dropzone.file-loaded #loaded-content { border-bottom: 0; }
+body.picker-open .dropzone.file-loaded #loaded-content { border-bottom: 0; }
 
-body:not(.view-home) .dropzone.file-loaded { border-radius: var(--radius-sm); }
+.dropzone.file-loaded { border-radius: var(--radius-sm); }
 
 .empty-state { display: none; }
-body:not(.view-home):not(.has-sheet) .empty-state {
+body:not(.has-sheet) .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1450,10 +1603,13 @@ body.sb-collapsed .sb-label,
 body.sb-collapsed .sb-kbd,
 body.sb-collapsed .badge,
 body.sb-collapsed .sb-block,
-body.sb-collapsed .sb-budget,
 body.sb-collapsed .account-btn-name,
 body.sb-collapsed .account-btn-caret { display: none; }
 body.sb-collapsed .sb-signin { justify-content: center; }
+/* Collapsed, the agent line keeps its dot and drops the label. */
+body.sb-collapsed .sb-agent-row { justify-content: center; }
+body.sb-collapsed .sb-agent { font-size: 0; }
+body.sb-collapsed .sb-agent::before { margin-right: 0; width: 6px; height: 6px; }
 body.sb-collapsed .sb-brand { justify-content: center; padding: 0 0.5rem; }
 body.sb-collapsed .sb-rail-btn { margin-left: 0; }
 body.sb-collapsed .sb-item,
@@ -1496,9 +1652,8 @@ body.sb-collapsed .qt-panel { left: calc(var(--sidebar-w) + 1rem); }
 
 /* ============================================================
    SIGN-IN GATE
-   One centered card with the Google button. The legal links stay
-   reachable without a session, which Google OAuth verification
-   requires of the app's home page.
+   One centered card with the Google button, over everything until
+   a Google session exists.
    ============================================================ */
 .auth-gate {
   position: fixed;
@@ -1589,19 +1744,6 @@ html.pre-auth .auth-gate { display: none; }
 }
 
 .auth-gate-note.error { color: var(--danger); }
-
-.auth-gate-footer {
-  display: flex;
-  gap: 1.25rem;
-  font-size: 0.75rem;
-}
-
-.auth-gate-footer a {
-  color: var(--faint);
-  text-decoration: none;
-  transition: color var(--transition);
-}
-.auth-gate-footer a:hover { color: var(--text-2); }
 
 @media (max-width: 600px) {
   .auth-gate-card { padding: 2rem 1.25rem 1.75rem; }

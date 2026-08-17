@@ -107,31 +107,36 @@ window.addEventListener('DOMContentLoaded', () => {
     // Use default 'auto' if language wasn't matched properly
     const safeLangCode = (langCode === 'auto') ? btn.closest('tr').children[1].textContent : langCode;
 
-    btn.textContent = 'Translating...';
+    btn.textContent = 'Translating…';
     btn.disabled = true;
+    btn.classList.remove('did-fail');   // a retry starts clean
 
     const responseObj = await fetchTranslation(englishText, 'en', safeLangCode === 'auto' ? '' : langCode);
-    const translation = responseObj.text;
 
-    if (translation && !translation.startsWith('Error')) {
-      const td = btn.closest('td');
-      const showSave = !!currentSheetRef;
-      td.innerHTML = `
-        <div style="display: flex; gap: 0.5rem; align-items: center;">
-          <input type="text" class="text-snippet inline-translation-input" dir="auto" value="${escapeHtml(translation).replace(/"/g, '&quot;')}" style="background: rgba(63,185,80,0.1); border: 1px solid rgba(63,185,80,0.3); color: var(--success); width: 100%; padding: 0.2rem 0.5rem; outline: none; border-radius: 4px; font-family: var(--font);" />
-          <button class="qt-copy-btn inline-copy-btn" title="Copy" style="position: static; flex-shrink: 0;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          </button>
-          ${showSave ? `<button class="btn sm-btn inline-save-btn" title="Save to Google Sheet" style="flex-shrink: 0;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-            Save
-          </button>` : ''}
-        </div>
-      `;
-    } else {
-      btn.textContent = 'Failed. Retry?';
+    // Branch on the explicit error, never on what the translated text says.
+    if (responseObj.error || !responseObj.text) {
+      btn.textContent = 'Failed — retry';
+      btn.classList.add('did-fail');
       btn.disabled = false;
+      showToast(`Could not translate — ${responseObj.error || 'empty response'}.`, 'error');
+      return;
     }
+
+    const translation = responseObj.text;
+    const td = btn.closest('td');
+    const showSave = !!currentSheetRef;
+    td.innerHTML = `
+      <div class="inline-trans-result">
+        <input type="text" class="inline-translation-input is-new" dir="auto" value="${escapeHtml(translation).replace(/"/g, '&quot;')}" />
+        <button class="qt-copy-btn inline-copy-btn" title="Copy">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        ${showSave ? `<button class="btn sm-btn inline-save-btn" title="Save to Google Sheet">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+          Save
+        </button>` : ''}
+      </div>
+    `;
   });
 
   // Inline save-to-sheet handler
@@ -1577,7 +1582,7 @@ window.addEventListener('DOMContentLoaded', () => {
           <td>${escapeHtml(issue.lang)}</td>
           <td><span class="text-snippet" dir="auto">${escapeHtml(issue.englishText)}</span></td>
           <td class="inline-trans-cell">
-            <button class="btn btn-primary sm-btn inline-translate-btn" data-text="${escapeHtml(issue.englishText)}" data-lang="${langCode}">
+            <button class="btn sm-btn inline-translate-btn" data-text="${escapeHtml(issue.englishText)}" data-lang="${langCode}">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
               Translate
             </button>
@@ -1604,8 +1609,8 @@ window.addEventListener('DOMContentLoaded', () => {
     const totalMissing = allMissingIssues.length;
     const totalIssues = totalFormat + totalMissing;
 
-    badgeFormat.textContent = allFormatIssues.length;
-    badgeMissing.textContent = allMissingIssues.length;
+    setBadge(badgeFormat, allFormatIssues.length);
+    setBadge(badgeMissing, allMissingIssues.length);
 
     // If it's a fresh scan (not filtered), reset pages
     if (!isFiltered) {
@@ -1650,30 +1655,56 @@ window.addEventListener('DOMContentLoaded', () => {
     return tl;
   }
 
+  /**
+   * Returns { text, detected, error }. `error` is null on success and a short
+   * reason otherwise — callers must branch on it rather than sniffing the text,
+   * or a translation that legitimately begins with "Error" reads as a failure.
+   *
+   * Two sources are tried in order. /api/translate is a serverless function
+   * that adds a User-Agent and a day of caching, so it is preferred wherever
+   * it exists; a static dev server (`npm run dev`) has no such route and
+   * answers 404, so we fall through to Google directly, which serves
+   * `Access-Control-Allow-Origin: *` and works from the browser.
+   */
   async function fetchTranslation(text, sourceLang, targetLang) {
-    if (!text.trim()) return { text: '', detected: '' };
+    if (!text.trim()) return { text: '', detected: '', error: null };
     const leadMatch = text.match(/^\s*/);
     const trailMatch = text.match(/\s*$/);
     const lead = leadMatch ? leadMatch[0] : '';
     const trail = trailMatch ? trailMatch[0] : '';
     const trimmed = text.slice(lead.length, text.length - trail.length);
-    try {
-      const isHttp = location.protocol === 'http:' || location.protocol === 'https:';
-      const url = isHttp
-        ? `/api/translate?sl=${sourceLang}&tl=${targetLang}&q=${encodeURIComponent(trimmed)}`
-        : `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(trimmed)}`;
-      const response = await fetch(url);
-      const data = await response.json();
-      const transText = data[0].map(x => x[0]).join('');
-      let detected = '';
-      if (sourceLang === 'auto' && data[2]) {
-        detected = data[2]; // e.g. 'es'
+    const q = encodeURIComponent(trimmed);
+
+    const direct = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${q}`;
+    const isHttp = location.protocol === 'http:' || location.protocol === 'https:';
+    const sources = isHttp
+      ? [`/api/translate?sl=${sourceLang}&tl=${targetLang}&q=${q}`, direct]
+      : [direct];
+
+    let reason = '';
+    for (const url of sources) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          reason = `the translation service returned ${response.status}`;
+          continue;
+        }
+        const data = await response.json();
+        const segments = data && data[0];
+        if (!Array.isArray(segments)) {
+          reason = 'the translation service sent something unexpected';
+          continue;
+        }
+        const transText = segments.map(x => x[0]).join('');
+        const detected = sourceLang === 'auto' && data[2] ? data[2] : '';
+        return { text: lead + transText + trail, detected, error: null };
+      } catch (e) {
+        // A dead network or a non-JSON body both land here.
+        reason = e && e.message ? e.message : String(e);
       }
-      return { text: lead + transText + trail, detected };
-    } catch (e) {
-      console.error('Translation failed:', e);
-      return { text: 'Error fetching translation. Please try again.', detected: '' };
     }
+    console.error('Translation failed:', reason);
+    return { text: '', detected: '', error: reason || 'the translation service could not be reached' };
   }
 
   function escapeHtml(unsafe) {
@@ -1708,14 +1739,9 @@ window.addEventListener('DOMContentLoaded', () => {
       srch.caseSensitive = sCaseChk.checked;
     }
 
-    const savedWrap = localStorage.getItem('locaLinterSearchWrap');
-    if (savedWrap !== 'false') { // Default to true if not explicitly saved as false
-      sWrapChk.checked = true;
-      searchTableWrap.classList.add('wrap-text');
-    } else {
-      sWrapChk.checked = false;
-      searchTableWrap.classList.remove('wrap-text');
-    }
+    // Wrap is one setting across all three tables, so re-apply the global one
+    // here rather than a per-tab key that nothing writes any more.
+    setWrap(localStorage.getItem('locaLinterGlobalWrap') !== 'false');
 
     srch.rows = buildFlatRows(rows, headers);
 
@@ -1904,12 +1930,14 @@ window.addEventListener('DOMContentLoaded', () => {
       `<span class="srch-count">${total.toLocaleString()}</span> result${total !== 1 ? 's' : ''} for
        <strong>&ldquo;${escapeHtml(query)}&rdquo;</strong>
        <span class="srch-mode-tag">${srch.mode}</span>
-       <span style="color:var(--text-muted)">of ${srch.rows.length.toLocaleString()} rows</span>`;
+       <span class="srch-of">of ${srch.rows.length.toLocaleString()} rows</span>`;
 
     // Determine which columns to display (Always show Key [idx 0], plus any selected columns)
     const displayCols = srch.allCols.filter((col, idx) => idx === 0 || srch.cols.includes(col));
 
-    // Build table head
+    // Build table head. The column count drives the wrapped layout's
+    // per-column floor, so it has to travel with the head.
+    searchTableWrap.style.setProperty('--cols', displayCols.length);
     searchThead.innerHTML = '';
     const hr = document.createElement('tr');
     displayCols.forEach(col => {
@@ -1923,7 +1951,7 @@ window.addEventListener('DOMContentLoaded', () => {
     searchTbody.innerHTML = '';
     if (!pageRows.length) {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td colspan="${displayCols.length}" class="success-state"><h3>No matches found</h3><p>Try a different mode or query.</p></td>`;
+      tr.innerHTML = `<td colspan="${displayCols.length}" class="empty-result"><h3>No matches found</h3><p>Try a different mode or query.</p></td>`;
       searchTbody.appendChild(tr);
     } else {
       const editable = !!currentSheetRef;
@@ -2123,6 +2151,19 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  /**
+   * A sidebar count carries its own verdict: green when a check came back
+   * clean, red when it did not. Grey is reserved for "nothing scanned yet",
+   * which is why an unscanned badge gets neither class.
+   */
+  function setBadge(el, count) {
+    if (!el) return;
+    el.textContent = count;
+    el.classList.toggle('has-issues', count > 0);
+    el.classList.toggle('is-clear', count === 0);
+  }
+  window.locaLinterSetBadge = setBadge;   // device-scan.js owns its own badge
+
   function setWrap(enabled) {
     if (globalWrapChk) globalWrapChk.checked = enabled;
     if (sWrapChk) sWrapChk.checked = enabled;
@@ -2283,14 +2324,31 @@ window.addEventListener('DOMContentLoaded', () => {
     const targetLang = qtLang.value;
     if (!text.trim()) {
       qtOutput.value = '';
+      setQtError('');
       return;
     }
 
     qtBtn.textContent = '...';
     qtBtn.disabled = true;
-    qtOutput.value = 'Translating...';
+    setQtError('');
+    // In-flight state goes in the placeholder, not the value — otherwise Copy
+    // happily puts "Translating…" on the clipboard.
+    qtOutput.value = '';
+    qtOutput.placeholder = 'Translating…';
 
     const translation = await fetchTranslation(text, sourceLang, targetLang);
+    qtBtn.disabled = false;
+    qtOutput.placeholder = 'Translation will appear here…';
+
+    // The failure has to stay out of the output box: text in there is
+    // copyable, and copying an error message as if it were a translation is
+    // worse than showing nothing.
+    if (translation.error) {
+      qtOutput.value = '';
+      qtBtn.textContent = 'Retry';
+      setQtError(`Could not translate — ${translation.error}.`);
+      return;
+    }
 
     qtOutput.value = translation.text;
     if (translation.detected && sourceLang === 'auto') {
@@ -2299,7 +2357,13 @@ window.addEventListener('DOMContentLoaded', () => {
     } else {
       qtBtn.textContent = 'Translate';
     }
-    qtBtn.disabled = false;
+  }
+
+  function setQtError(message) {
+    const box = document.getElementById('qt-error');
+    if (!box) return;
+    box.textContent = message;
+    box.classList.toggle('hidden', !message);
   }
 
   qtBtn.addEventListener('click', triggerTranslation);

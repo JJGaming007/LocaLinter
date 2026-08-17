@@ -12,8 +12,8 @@
   <link
     href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;450;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap"
     rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=2.2" />
-  <link rel="stylesheet" href="device-scan.css?v=2.0" />
+  <link rel="stylesheet" href="styles.css?v=2.6" />
+  <link rel="stylesheet" href="device-scan.css?v=2.1" />
   <link rel="icon" type="image/png" href="/assets/favicon-32.png" />
   <link rel="apple-touch-icon" href="/assets/logo.png" />
   <!-- Replace content with your Google OAuth Client ID (from Google Cloud Console) -->
@@ -22,8 +22,8 @@
   <meta name="google-allowed-domains" content="supergaming.com" />
   <script src="assets/xlsx.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="shell.js?v=1.1" defer></script>
-  <script src="main.js?v=2.0" defer></script>
+  <script src="shell.js?v=1.3" defer></script>
+  <script src="main.js?v=2.3" defer></script>
   <script>
     // Skip the gate's first paint when this tab already holds a session.
     try {
@@ -33,7 +33,7 @@
       }
     } catch (e) { /* no session hint available */ }
   </script>
-  <script src="device-scan.js?v=1.6" defer></script>
+  <script src="device-scan.js?v=2.0" defer></script>
 </head>
 
 <body>
@@ -42,8 +42,7 @@
 
   <!-- ══ Sign-in gate ══
        Google sign-in and nothing else. Covers the app until a Google session
-       exists. The legal links stay because Google OAuth verification checks
-       the app's home page for them. -->
+       exists. -->
   <div class="auth-gate" id="auth-gate" aria-labelledby="auth-gate-title">
     <div class="auth-gate-card">
       <img class="auth-gate-mark" src="/assets/logo.png" alt="" width="40" height="40" />
@@ -61,11 +60,6 @@
       </button>
       <p class="auth-gate-note" id="gate-status">You stay signed in on this browser until you sign out.</p>
     </div>
-
-    <footer class="auth-gate-footer">
-      <a href="privacy.html">Privacy</a>
-      <a href="terms.html">Terms</a>
-    </footer>
   </div>
 
   <div class="app" id="app">
@@ -103,15 +97,6 @@
 
       <nav class="sb-nav" role="tablist" aria-label="Sections">
         <span class="sb-label">Workspace</span>
-
-        <button class="sb-item" id="nav-home" type="button">
-          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 10.5 12 3l9 7.5" />
-            <path d="M5 9.5V21h14V9.5" />
-          </svg>
-          <span class="sb-item-text">Home</span>
-        </button>
 
         <button class="sb-item tab-btn active" data-tab="format-issues" role="tab" aria-selected="true"
           id="tab-btn-format" type="button">
@@ -175,20 +160,9 @@
           <kbd class="sb-kbd">T</kbd>
         </button>
 
-        <!-- What device scans have actually spent on the Claude API this month -->
-        <div class="sb-budget" id="sb-budget" title="Measured from the token counts the Claude API returned for each scan">
-          <div class="sb-budget-top">
-            <span class="sb-label">AI spend</span>
-            <span class="sb-budget-figure" id="ai-spend">—</span>
-          </div>
-          <div class="sb-meter hidden" id="ai-meter-wrap"><span class="sb-meter-fill" id="ai-meter"></span></div>
-          <div class="sb-budget-sub">
-            <span id="ai-detail">No scans this month</span>
-          </div>
-          <div class="sb-budget-sub">
-            <span id="ai-agent" class="sb-agent">agent offline</span>
-            <button class="btn-link" id="ai-edit" type="button">set cap</button>
-          </div>
+        <!-- Whether the local device-scan agent is reachable right now -->
+        <div class="sb-agent-row">
+          <span id="sb-agent-state" class="sb-agent">agent offline</span>
         </div>
 
         <div class="sb-user-row">
@@ -221,22 +195,7 @@
                   <div id="account-menu-email" class="account-menu-email"></div>
                 </div>
               </div>
-              <a href="privacy.html" class="account-menu-item" role="menuitem">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 3l7 3v6c0 4.2-2.8 7.5-7 9-4.2-1.5-7-4.8-7-9V6z" />
-                </svg>
-                Privacy policy
-              </a>
-              <a href="terms.html" class="account-menu-item" role="menuitem">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
-                  <path d="M14 3v5h5" />
-                </svg>
-                Terms of service
-              </a>
-              <button id="account-signout-btn" class="account-menu-item" type="button">
+              <button id="account-signout-btn" class="account-menu-item account-menu-danger" type="button">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
                   stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -267,7 +226,7 @@
           <span class="crumb-sep">/</span>
           <span id="crumb-sheet">No sheet</span>
           <span class="crumb-sep">/</span>
-          <span class="crumb-now" id="crumb-tab">Home</span>
+          <span class="crumb-now" id="crumb-tab">Format issues</span>
         </nav>
         <div class="topbar-actions">
           <span class="topbar-meta" id="topbar-meta"></span>
@@ -294,8 +253,8 @@
       <div class="container">
         <!-- ── Page head ── -->
         <div class="page-head">
-          <h1 class="page-title" id="page-title">Home<span class="accent-text">.</span></h1>
-          <p class="page-sub" id="page-sub">Drop an .xlsx or .csv sheet to check formatting, brackets and variables.</p>
+          <h1 class="page-title" id="page-title">Format issues<span class="accent-text">.</span></h1>
+          <p class="page-sub" id="page-sub">Bracket, spacing and variable problems found in the translated strings.</p>
         </div>
 
         <!-- ── Drop Zone ── -->
@@ -403,7 +362,18 @@
             links</button>
           <span id="link-sync-current" class="link-sync-current"></span>
         </div>
-        <button id="remove-file-btn" class="btn btn-ghost sm-btn">
+        <button id="change-sheet-btn" class="btn btn-ghost sm-btn" type="button" aria-expanded="false"
+          aria-controls="drop-content-idle" title="Open a different sheet">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="17 1 21 5 17 9" />
+            <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+            <polyline points="7 23 3 19 7 15" />
+            <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+          </svg>
+          Change sheet
+        </button>
+        <button id="remove-file-btn" class="btn btn-danger sm-btn">
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="3 6 5 6 21 6" />
@@ -594,6 +564,15 @@
               <label for="ds-agent-url">Agent URL</label>
               <input type="text" id="ds-agent-url" value="http://127.0.0.1:8790" spellcheck="false" />
               <button class="btn btn-secondary sm-btn" id="ds-reconnect">Reconnect</button>
+              <button class="btn btn-ghost sm-btn hidden" id="ds-watch" aria-live="polite">Watch for agent</button>
+            </div>
+            <div class="ds-row hidden" id="ds-autostart-row">
+              <label for="ds-autostart">Start at login</label>
+              <label class="stoggle">
+                <input type="checkbox" id="ds-autostart" />
+                <span class="stoggle-track"></span>
+                <span id="ds-autostart-text">Launch the agent automatically when you sign in to Windows</span>
+              </label>
             </div>
             <div class="ds-row">
               <label for="ds-api-key">Anthropic API key</label>
@@ -653,8 +632,9 @@
             <div class="ds-row ds-actions">
               <button class="btn btn-secondary sm-btn" id="ds-probe">Test connection</button>
               <button class="btn btn-primary" id="ds-start" disabled>Start scan</button>
-              <button class="btn btn-secondary sm-btn" id="ds-stop" disabled>Stop scan</button>
-              <button class="btn btn-secondary sm-btn" id="ds-advanced-toggle">Advanced</button>
+              <button class="btn btn-danger sm-btn" id="ds-stop" disabled>Stop scan</button>
+              <button class="btn btn-ghost sm-btn" id="ds-advanced-toggle" aria-expanded="false"
+                aria-controls="ds-advanced">Advanced</button>
             </div>
             <div class="ds-probe-out" id="ds-probe-out"></div>
 
@@ -720,7 +700,7 @@
             <div class="ds-stats">
               <div class="stat-pill neutral"><span id="ds-stat-screens">Screens: 0</span></div>
               <div class="stat-pill neutral"><span id="ds-stat-actions">Actions: 0</span></div>
-              <div class="stat-pill danger"><span id="ds-stat-issues">Issues: 0</span></div>
+              <div class="stat-pill neutral"><span id="ds-stat-issues">Issues: 0</span></div>
               <div class="stat-pill neutral"><span id="ds-stat-queue">Queued: 0</span></div>
             </div>
             <div class="ds-summary hidden" id="ds-summary"></div>
@@ -773,13 +753,6 @@
         <label class="field-label" for="ignore-list">Ignored terms</label>
         <p class="field-help">Comma separated. Any key containing one of these is skipped during validation.</p>
         <textarea id="ignore-list" class="field-input" placeholder="metadata, tracking, legacy_"></textarea>
-      </div>
-      <div class="settings-group">
-        <label class="field-label" for="ai-cap-input">Monthly AI spend cap</label>
-        <p class="field-help">Optional. US dollars. Leave empty for no cap — the sidebar then just reports what device
-          scans have actually spent, priced from the token counts the Claude API returns.</p>
-        <input type="text" id="ai-cap-input" class="field-input" inputmode="decimal" placeholder="e.g. 50" />
-        <button class="btn-link" id="ai-reset-btn" type="button">Clear this month's recorded spend</button>
       </div>
       <button id="save-ignore-btn" class="btn btn-primary btn-block">
         Save &amp; re-scan
@@ -1039,6 +1012,7 @@
           </svg>
         </button>
       </div>
+      <p class="qt-error hidden" id="qt-error" role="alert"></p>
     </div>
   </div>
 
