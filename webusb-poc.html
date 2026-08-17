@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LocaLinter — WebUSB ADB proof of concept</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;450;500;600&family=IBM+Plex+Serif:wght@0,400;0,500&display=swap"
+    rel="stylesheet" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0a0a0b; --panel: #101012; --panel-2: #141417; --panel-3: #17171b;
+      --border: #1e1e22; --border-strong: #2a2a30;
+      --text: #ecebe8; --text-2: #c6c2bb; --muted: #8b877f; --faint: #66625b;
+      --accent: #d98a3d; --accent-hi: #eda354;
+      --accent-dim: rgba(217,138,61,.12); --accent-line: rgba(217,138,61,.38);
+      --danger: #d4594f; --danger-bg: rgba(212,89,79,.1); --danger-border: rgba(212,89,79,.32);
+      --success: #74a06a; --warning: #c9a04a;
+      --font: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+      --mono: 'IBM Plex Mono', ui-monospace, Consolas, monospace;
+      --serif: 'IBM Plex Serif', Georgia, serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font); background: var(--bg); color: var(--text);
+      font-size: 14.5px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+      padding: 2rem 1.5rem 5rem;
+    }
+    .wrap { max-width: 940px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.25rem; }
+    h1 { font-family: var(--serif); font-size: 1.9rem; font-weight: 500; letter-spacing: -.015em; }
+    h1 span { color: var(--accent); }
+    .sub { color: var(--muted); font-size: .87rem; max-width: 70ch; }
+    .panel { border: 1px solid var(--border); border-radius: 6px; background: var(--panel); padding: 1rem 1.1rem; }
+    .panel h2 {
+      font-family: var(--mono); font-size: .66rem; font-weight: 600; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: .75rem;
+    }
+    .row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+    .row + .row { margin-top: .6rem; }
+    label { font-family: var(--mono); font-size: .66rem; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); min-width: 76px; }
+    input[type=text], input[type=number] {
+      background: var(--panel-2); border: 1px solid var(--border-strong); border-radius: 4px;
+      color: var(--text); font-family: var(--mono); font-size: .78rem; padding: .4rem .55rem; outline: none;
+    }
+    input[type=text] { flex: 1; min-width: 200px; }
+    input[type=number] { width: 90px; }
+    input:focus { border-color: var(--accent-line); }
+    .btn {
+      display: inline-flex; align-items: center; gap: .4rem; padding: .42rem .8rem; border-radius: 4px;
+      border: 1px solid var(--border-strong); background: var(--panel-2); color: var(--text);
+      font-family: var(--font); font-size: .8rem; font-weight: 500; cursor: pointer; white-space: nowrap;
+    }
+    .btn:hover:not(:disabled) { background: var(--panel-3); border-color: #35353c; }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: #14100a; font-weight: 600; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hi); border-color: var(--accent-hi); }
+    .btn-danger { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger); }
+    .status {
+      font-family: var(--mono); font-size: .68rem; padding: .18rem .5rem; border-radius: 3px;
+      border: 1px solid var(--border-strong); color: var(--muted);
+    }
+    .status.ok { color: var(--success); border-color: rgba(116,160,106,.35); background: rgba(116,160,106,.08); }
+    .status.bad { color: var(--danger); border-color: var(--danger-border); background: var(--danger-bg); }
+    .status.pending { color: var(--accent-hi); border-color: var(--accent-line); background: var(--accent-dim); }
+    .head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .75rem; }
+    .head h2 { margin-bottom: 0; }
+    #log {
+      font-family: var(--mono); font-size: .71rem; line-height: 1.65; background: var(--bg);
+      border: 1px solid var(--border); border-radius: 4px; padding: .7rem .8rem;
+      height: 300px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+    }
+    .l-info { color: var(--text-2); } .l-dim { color: var(--faint); }
+    .l-ok { color: var(--success); } .l-warn { color: var(--warning); } .l-err { color: var(--danger); }
+    .l-tx { color: var(--accent); } .l-rx { color: #6a8fbf; }
+    pre.out {
+      font-family: var(--mono); font-size: .73rem; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 4px; padding: .6rem .7rem; margin-top: .6rem; max-height: 200px; overflow: auto;
+      white-space: pre-wrap; word-break: break-word; color: var(--text-2);
+    }
+    #shot { max-width: 260px; border: 1px solid var(--border-strong); border-radius: 4px; margin-top: .7rem; display: block; cursor: crosshair; }
+    .note { font-size: .78rem; color: var(--muted); margin-top: .5rem; line-height: 1.6; }
+    .note code, .sub code { font-family: var(--mono); font-size: .92em; color: var(--accent); background: var(--accent-dim); padding: .05rem .25rem; border-radius: 3px; }
+    .warn-box { border: 1px solid var(--danger-border); border-left: 3px solid var(--danger); background: var(--danger-bg); border-radius: 4px; padding: .7rem .85rem; font-size: .8rem; color: var(--text-2); }
+    .warn-box b { color: var(--danger); }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div>
+      <h1>WebUSB ADB<span>.</span></h1>
+      <p class="sub">
+        Proof of concept: talk to the phone straight from this page, with no local agent. The page claims the
+        device's ADB USB interface, speaks the ADB wire protocol itself, and signs the auth challenge in
+        JavaScript. Nothing here contacts a server — open DevTools' Network tab and watch it stay empty.
+      </p>
+    </div>
+
+    <div class="warn-box" id="prereq">
+      <b>Before you connect:</b> a running <code>adb</code> server holds the USB interface exclusively and Chrome
+      cannot claim it. Run <code>adb kill-server</code> in a terminal first. Chromium-based browser required
+      (Chrome or Edge) — WebUSB does not exist in Firefox or Safari.
+    </div>
+
+    <div class="panel">
+      <div class="head">
+        <h2>Device</h2>
+        <span class="status" id="conn-status">Not connected</span>
+      </div>
+      <div class="row">
+        <button class="btn btn-primary" id="connect">Connect device</button>
+        <button class="btn btn-danger" id="disconnect" disabled>Disconnect</button>
+        <button class="btn" id="forget" title="Drop the saved RSA key so the phone prompts again">Reset auth key</button>
+      </div>
+      <p class="note" id="banner"></p>
+    </div>
+
+    <div class="grid">
+      <div class="panel">
+        <h2>Shell command</h2>
+        <div class="row">
+          <input type="text" id="cmd" value="getprop ro.product.model" spellcheck="false" />
+          <button class="btn" id="run" disabled>Run</button>
+        </div>
+        <div class="row">
+          <button class="btn" id="probe" disabled>Run the agent's probe set</button>
+        </div>
+        <pre class="out" id="cmd-out">—</pre>
+      </div>
+
+      <div class="panel">
+        <h2>Screen</h2>
+        <div class="row">
+          <button class="btn" id="shoot" disabled>Take screenshot</button>
+          <span class="status" id="shot-info">—</span>
+        </div>
+        <div class="row">
+          <label for="tap-x">Tap</label>
+          <input type="number" id="tap-x" value="540" /> <input type="number" id="tap-y" value="1200" />
+          <button class="btn" id="tap" disabled>Send tap</button>
+        </div>
+        <p class="note">Click the screenshot to fill in coordinates and tap there.</p>
+        <img id="shot" alt="" hidden />
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="head">
+        <h2>Protocol log</h2>
+        <button class="btn" id="clear-log">Clear</button>
+      </div>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <script>
+  'use strict';
+  /* ==========================================================================
+     ADB over WebUSB.
+
+     This is the whole reason the local agent exists, reimplemented in a page.
+     adb.exe is not involved: we claim the USB interface Android exposes for
+     ADB (class 0xFF, subclass 0x42, protocol 0x01) and speak its wire protocol
+     directly — the same CNXN / AUTH / OPEN / WRTE / OKAY / CLSE packets.
+     ========================================================================== */
+
+  const $ = (id) => document.getElementById(id);
+  const KEY_STORAGE = 'localinter_webadb_key_v1';
+
+  /* ── logging ─────────────────────────────────────────────────────────── */
+
+  function log(msg, cls = 'info') {
+    const line = document.createElement('div');
+    line.className = `l-${cls}`;
+    line.textContent = `${new Date().toISOString().slice(11, 23)}  ${msg}`;
+    $('log').appendChild(line);
+    $('log').scrollTop = $('log').scrollHeight;
+  }
+
+  function setStatus(el, text, cls) {
+    el.textContent = text;
+    el.className = `status${cls ? ' ' + cls : ''}`;
+  }
+
+  /* ── ADB packets ─────────────────────────────────────────────────────────
+     24-byte header: command, arg0, arg1, length, checksum, magic — all
+     little-endian u32. magic is command XOR 0xFFFFFFFF, which is how the
+     other end sanity-checks the header. */
+
+  const A_CNXN = 0x4e584e43, A_AUTH = 0x48545541, A_OPEN = 0x4e45504f;
+  const A_OKAY = 0x59414b4f, A_CLSE = 0x45534c43, A_WRTE = 0x45545257;
+  const AUTH_TOKEN = 1, AUTH_SIGNATURE = 2, AUTH_RSAPUBLICKEY = 3;
+  const A_VERSION = 0x01000001;
+  const MAX_PAYLOAD = 256 * 1024;
+
+  const NAMES = { [A_CNXN]: 'CNXN', [A_AUTH]: 'AUTH', [A_OPEN]: 'OPEN', [A_OKAY]: 'OKAY', [A_CLSE]: 'CLSE', [A_WRTE]: 'WRTE' };
+
+  function encodePacket(command, arg0, arg1, payload) {
+    const data = payload || new Uint8Array(0);
+    let sum = 0;
+    for (const b of data) sum = (sum + b) >>> 0;
+    const header = new ArrayBuffer(24);
+    const view = new DataView(header);
+    view.setUint32(0, command, true);
+    view.setUint32(4, arg0 >>> 0, true);
+    view.setUint32(8, arg1 >>> 0, true);
+    view.setUint32(12, data.length, true);
+    view.setUint32(16, sum, true);
+    view.setUint32(20, (command ^ 0xffffffff) >>> 0, true);
+    return { header: new Uint8Array(header), data };
+  }
+
+  function decodeHeader(buffer) {
+    const v = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    return {
+      command: v.getUint32(0, true),
+      arg0: v.getUint32(4, true),
+      arg1: v.getUint32(8, true),
+      length: v.getUint32(12, true),
+      checksum: v.getUint32(16, true),
+      magic: v.getUint32(20, true),
+    };
+  }
+
+  const enc = (s) => new TextEncoder().encode(s);
+  const dec = (b) => new TextDecoder().decode(b);
+
+  /* ── the RSA key ─────────────────────────────────────────────────────────
+     ADB's challenge is already a 20-byte SHA-1 digest, and it wants that
+     digest signed with raw PKCS#1 v1.5. WebCrypto's sign() insists on hashing
+     the input first, which would sign the wrong thing entirely, so the padding
+     and the modular exponentiation are done by hand over BigInt. Generation
+     and export still go through WebCrypto. */
+
+  const SHA1_DIGEST_INFO = new Uint8Array([
+    0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e, 0x03, 0x02, 0x1a, 0x05, 0x00, 0x04, 0x14,
+  ]);
+
+  function b64ToBytes(b64) {
+    const bin = atob(b64.replace(/-/g, '+').replace(/_/g, '/'));
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function bytesToB64(bytes) {
+    let s = '';
+    for (const b of bytes) s += String.fromCharCode(b);
+    return btoa(s);
+  }
+  function bytesToBigInt(bytes) {
+    let n = 0n;
+    for (const b of bytes) n = (n << 8n) | BigInt(b);
+    return n;
+  }
+  function bigIntToBytes(n, length) {
+    const out = new Uint8Array(length);
+    for (let i = length - 1; i >= 0; i--) { out[i] = Number(n & 0xffn); n >>= 8n; }
+    return out;
+  }
+  function modPow(base, exp, mod) {
+    let result = 1n;
+    base %= mod;
+    while (exp > 0n) {
+      if (exp & 1n) result = (result * base) % mod;
+      base = (base * base) % mod;
+      exp >>= 1n;
+    }
+    return result;
+  }
+
+  class AdbKey {
+    constructor(jwk) {
+      this.jwk = jwk;
+      this.n = bytesToBigInt(b64ToBytes(jwk.n));
+      this.d = bytesToBigInt(b64ToBytes(jwk.d));
+      this.size = b64ToBytes(jwk.n).length;   // 256 for a 2048-bit key
+    }
+
+    static async load() {
+      const saved = localStorage.getItem(KEY_STORAGE);
+      if (saved) {
+        try { return new AdbKey(JSON.parse(saved)); } catch { /* regenerate below */ }
+      }
+      return AdbKey.generate();
+    }
+
+    static async generate() {
+      log('Generating a 2048-bit RSA key for this browser…', 'dim');
+      const pair = await crypto.subtle.generateKey(
+        { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-1' },
+        true, ['sign', 'verify']
+      );
+      const jwk = await crypto.subtle.exportKey('jwk', pair.privateKey);
+      localStorage.setItem(KEY_STORAGE, JSON.stringify(jwk));
+      return new AdbKey(jwk);
+    }
+
+    /** PKCS#1 v1.5: 0x00 0x01 <0xFF padding> 0x00 <SHA1 DigestInfo> <token>. */
+    sign(token) {
+      const em = new Uint8Array(this.size);
+      const tail = SHA1_DIGEST_INFO.length + token.length;
+      em[0] = 0x00; em[1] = 0x01;
+      em.fill(0xff, 2, this.size - tail - 1);
+      em[this.size - tail - 1] = 0x00;
+      em.set(SHA1_DIGEST_INFO, this.size - tail);
+      em.set(token, this.size - token.length);
+      return bigIntToBytes(modPow(bytesToBigInt(em), this.d, this.n), this.size);
+    }
+
+    /**
+     * Android does not want a PEM. adbd expects its own RSAPublicKey struct,
+     * base64'd: modulus length in 32-bit words, -1/n[0] mod 2^32, the modulus
+     * and R^2 mod n as little-endian word arrays, then the exponent.
+     */
+    androidPublicKey(name = 'localinter@webusb') {
+      const words = this.size / 4;                     // 64
+      const buf = new ArrayBuffer(4 + 4 + this.size + this.size + 4);
+      const view = new DataView(buf);
+
+      const n0 = this.n & 0xffffffffn;
+      let inv = 1n;                                     // n0^-1 mod 2^32 by Newton iteration
+      for (let i = 0; i < 32; i++) inv = (inv * (2n - n0 * inv)) & 0xffffffffn;
+      const n0inv = (0x100000000n - inv) & 0xffffffffn; // adbd wants the negative
+
+      view.setUint32(0, words, true);
+      view.setUint32(4, Number(n0inv), true);
+      let n = this.n;
+      for (let i = 0; i < words; i++) { view.setUint32(8 + i * 4, Number(n & 0xffffffffn), true); n >>= 32n; }
+      let rr = (1n << BigInt(this.size * 8 * 2)) % this.n;   // R^2 mod n, R = 2^2048
+      for (let i = 0; i < words; i++) { view.setUint32(8 + this.size + i * 4, Number(rr & 0xffffffffn), true); rr >>= 32n; }
+      view.setUint32(8 + this.size * 2, 65537, true);
+
+      return enc(`${bytesToB64(new Uint8Array(buf))} ${name}\0`);
+    }
+  }
+
+  /* ── the device ──────────────────────────────────────────────────────── */
+
+  class AdbDevice {
+    constructor(usb) {
+      this.usb = usb;
+      this.inEp = 0;
+      this.outEp = 0;
+      this.maxPayload = MAX_PAYLOAD;
+      this.banner = '';
+      this.nextLocalId = 1;
+    }
+
+    static async request() {
+      // Every Android device exposes ADB behind this exact interface triple.
+      return navigator.usb.requestDevice({
+        filters: [{ classCode: 0xff, subclassCode: 0x42, protocolCode: 0x01 }],
+      });
+    }
+
+    async open() {
+      await this.usb.open();
+      if (!this.usb.configuration) await this.usb.selectConfiguration(1);
+
+      let iface = null, alt = null;
+      for (const i of this.usb.configuration.interfaces) {
+        for (const a of i.alternates) {
+          if (a.interfaceClass === 0xff && a.interfaceSubclass === 0x42 && a.interfaceProtocol === 0x01) {
+            iface = i; alt = a;
+          }
+        }
+      }
+      if (!iface) throw new Error('No ADB interface on this device. Is USB debugging on, and the cable in data mode?');
+
+      await this.usb.claimInterface(iface.interfaceNumber);
+      this.iface = iface.interfaceNumber;
+      for (const ep of alt.endpoints) {
+        if (ep.type !== 'bulk') continue;
+        if (ep.direction === 'in') this.inEp = ep.endpointNumber;
+        else this.outEp = ep.endpointNumber;
+      }
+      if (!this.inEp || !this.outEp) throw new Error('ADB interface has no bulk endpoints.');
+      log(`Claimed interface ${this.iface} (bulk in ${this.inEp}, out ${this.outEp})`, 'ok');
+    }
+
+    async send(command, arg0, arg1, payload) {
+      const { header, data } = encodePacket(command, arg0, arg1, payload);
+      log(`TX ${NAMES[command] || command} arg0=${arg0} arg1=${arg1} len=${data.length}`, 'tx');
+      await this.usb.transferOut(this.outEp, header);
+      if (data.length) await this.usb.transferOut(this.outEp, data);
+    }
+
+    async receive() {
+      const head = await this.usb.transferIn(this.inEp, 24);
+      if (head.status !== 'ok') throw new Error(`USB read failed: ${head.status}`);
+      if (head.data.byteLength < 24) throw new Error(`Short header: ${head.data.byteLength} bytes`);
+      const packet = decodeHeader(new Uint8Array(head.data.buffer, head.data.byteOffset, 24));
+      if (((packet.command ^ 0xffffffff) >>> 0) !== packet.magic) {
+        throw new Error('Bad packet magic — the stream is out of sync.');
+      }
+      let data = new Uint8Array(0);
+      if (packet.length) {
+        const chunks = [];
+        let got = 0;
+        while (got < packet.length) {
+          const r = await this.usb.transferIn(this.inEp, packet.length - got);
+          if (r.status !== 'ok') throw new Error(`USB read failed: ${r.status}`);
+          // byteLength, not buffer.length: Chrome hands back a buffer sized to
+          // what we *asked* for, so trusting .buffer silently appends however
+          // many zero bytes were not filled in.
+          const chunk = new Uint8Array(r.data.buffer, r.data.byteOffset, r.data.byteLength);
+          chunks.push(chunk); got += chunk.length;
+        }
+        data = new Uint8Array(got);
+        let at = 0;
+        for (const c of chunks) { data.set(c, at); at += c.length; }
+      }
+      packet.data = data;
+      log(`RX ${NAMES[packet.command] || packet.command} arg0=${packet.arg0} arg1=${packet.arg1} len=${packet.length}`, 'rx');
+      return packet;
+    }
+
+    /** CNXN, then answer the AUTH challenge until the device says CNXN back. */
+    async connect(key) {
+      await this.send(A_CNXN, A_VERSION, this.maxPayload, enc('host::features=shell_v2,cmd\0'));
+
+      let sentPublicKey = false;
+      for (let i = 0; i < 8; i++) {
+        const p = await this.receive();
+
+        if (p.command === A_CNXN) {
+          this.banner = dec(p.data).replace(/\0+$/, '');
+          this.maxPayload = Math.min(p.arg1 || MAX_PAYLOAD, MAX_PAYLOAD);
+          log(`Connected: ${this.banner}`, 'ok');
+          return this.banner;
+        }
+
+        if (p.command === A_AUTH && p.arg0 === AUTH_TOKEN) {
+          if (!sentPublicKey) {
+            log('Device sent a 20-byte challenge — signing it with the stored key.', 'dim');
+            await this.send(A_AUTH, AUTH_SIGNATURE, 0, key.sign(p.data));
+          } else {
+            throw new Error('The device rejected the key even after the prompt. Revoke USB debugging authorisations on the phone and retry.');
+          }
+          // If the signature is refused the device just sends another token;
+          // that is the cue to offer the public key and let the user approve.
+          const next = await this.receive();
+          if (next.command === A_CNXN) {
+            this.banner = dec(next.data).replace(/\0+$/, '');
+            this.maxPayload = Math.min(next.arg1 || MAX_PAYLOAD, MAX_PAYLOAD);
+            log(`Connected: ${this.banner}`, 'ok');
+            return this.banner;
+          }
+          if (next.command === A_AUTH) {
+            log('Signature not recognised — sending the public key. WATCH THE PHONE: tap "Allow USB debugging".', 'warn');
+            await this.send(A_AUTH, AUTH_RSAPUBLICKEY, 0, key.androidPublicKey());
+            sentPublicKey = true;
+          }
+        }
+      }
+      throw new Error('Gave up waiting for the device to accept the key.');
+    }
+
+    /**
+     * Open one ADB service and read it to completion.
+     * `shell:` runs through a PTY and mangles binary, so anything that is not
+     * text (a PNG, say) must go through `exec:` instead.
+     */
+    async openService(service) {
+      const localId = this.nextLocalId++;
+      await this.send(A_OPEN, localId, 0, enc(`${service}\0`));
+
+      let remoteId = 0;
+      let bytes = 0;
+      const chunks = [];
+      for (;;) {
+        const p = await this.receive();
+
+        // Every packet names the stream it belongs to in arg1. Without this
+        // check, the CLSE that ends one command is read as the first packet of
+        // the next one, which then returns nothing at all — the stream is one
+        // shared pipe, not a socket per command.
+        if (p.arg1 !== localId) {
+          log(`  ignoring ${NAMES[p.command] || p.command} for stream ${p.arg1} (we are ${localId})`, 'dim');
+          continue;
+        }
+
+        if (p.command === A_CLSE) {
+          // remote-id 0 on the close means the service never opened at all.
+          if (!remoteId) throw new Error(`The device refused the service "${service}".`);
+          await this.send(A_CLSE, localId, remoteId).catch(() => {});
+          break;
+        }
+        if (p.command === A_OKAY) { remoteId = p.arg0; continue; }
+        if (p.command === A_WRTE) {
+          remoteId = p.arg0;
+          chunks.push(p.data);
+          bytes += p.data.length;
+          await this.send(A_OKAY, localId, remoteId);   // flow control: ack every write
+          continue;
+        }
+      }
+      log(`  ${service} → ${bytes} bytes in ${chunks.length} writes`, 'dim');
+      const out = new Uint8Array(bytes);
+      let at = 0;
+      for (const c of chunks) { out.set(c, at); at += c.length; }
+      return out;
+    }
+
+    shell(command) { return this.openService(`shell:${command}`).then(dec); }
+    exec(command) { return this.openService(`exec:${command}`); }
+
+    /**
+     * Two ways to get a PNG off the device, because `exec:` is the fast one but
+     * not every build serves it. The fallback goes through the PTY and would
+     * mangle raw bytes, so the device base64s it first — slower, but immune.
+     */
+    async screenshot() {
+      const isPng = (b) => b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47;
+
+      try {
+        const png = await this.exec('screencap -p');
+        if (isPng(png)) { log('Captured via exec: (binary-safe)', 'ok'); return png; }
+        log(`exec: returned ${png.length} bytes that are not a PNG — falling back to base64.`, 'warn');
+      } catch (e) {
+        log(`exec: unavailable (${e.message}) — falling back to base64.`, 'warn');
+      }
+
+      const b64 = (await this.shell('screencap -p | base64')).replace(/\s+/g, '');
+      if (!b64) throw new Error('Both exec: and the base64 fallback returned nothing.');
+      const png = b64ToBytes(b64);
+      if (!isPng(png)) throw new Error(`base64 fallback decoded ${png.length} bytes that are not a PNG.`);
+      log('Captured via shell: + base64 (PTY-safe)', 'ok');
+      return png;
+    }
+
+    async close() {
+      try { await this.usb.releaseInterface(this.iface); } catch { /* already gone */ }
+      try { await this.usb.close(); } catch { /* already gone */ }
+    }
+  }
+
+  /* ── UI ──────────────────────────────────────────────────────────────── */
+
+  let device = null;
+  let key = null;
+  let busy = false;
+
+  const CONTROLS = ['run', 'probe', 'shoot', 'tap'];
+  function setConnected(on) {
+    CONTROLS.forEach((id) => { $(id).disabled = !on; });
+    $('disconnect').disabled = !on;
+    $('connect').disabled = on;
+  }
+
+  /** Serialised: the ADB stream is one conversation, so two at once desyncs it. */
+  async function guard(fn) {
+    if (busy) return log('Busy — one ADB conversation at a time.', 'warn');
+    busy = true;
+    CONTROLS.forEach((id) => { $(id).disabled = true; });
+    try { await fn(); }
+    catch (e) { log(`Error: ${e.message}`, 'err'); }
+    finally {
+      busy = false;
+      if (device) CONTROLS.forEach((id) => { $(id).disabled = false; });
+    }
+  }
+
+  if (!('usb' in navigator)) {
+    setStatus($('conn-status'), 'WebUSB unavailable', 'bad');
+    $('connect').disabled = true;
+    $('prereq').innerHTML = '<b>This browser has no WebUSB.</b> It exists only in Chromium-based browsers — use Chrome or Edge. That limitation is the single biggest argument against moving the agent into the browser.';
+  }
+
+  $('connect').addEventListener('click', () => guard(async () => {
+    setStatus($('conn-status'), 'Requesting…', 'pending');
+    const usb = await AdbDevice.request();
+    log(`Picked ${usb.manufacturerName || '?'} ${usb.productName || '?'} (serial ${usb.serialNumber || '?'})`, 'info');
+
+    device = new AdbDevice(usb);
+    await device.open();
+    key = key || await AdbKey.load();
+
+    setStatus($('conn-status'), 'Authenticating…', 'pending');
+    const banner = await device.connect(key);
+    setStatus($('conn-status'), 'Connected', 'ok');
+    $('banner').textContent = banner;
+    setConnected(true);
+  }).catch((e) => {
+    setStatus($('conn-status'), 'Failed', 'bad');
+    log(`Connect failed: ${e.message}`, 'err');
+    if (/access denied|unable to claim/i.test(e.message)) {
+      log('That is the adb server holding the interface. Run "adb kill-server" and try again.', 'warn');
+    }
+    device = null;
+  }));
+
+  $('disconnect').addEventListener('click', () => guard(async () => {
+    if (device) await device.close();
+    device = null;
+    setConnected(false);
+    setStatus($('conn-status'), 'Not connected', '');
+    $('banner').textContent = '';
+    log('Disconnected.', 'info');
+  }));
+
+  $('forget').addEventListener('click', () => {
+    localStorage.removeItem(KEY_STORAGE);
+    key = null;
+    log('Stored key dropped. The phone will prompt again on the next connect.', 'warn');
+  });
+
+  $('run').addEventListener('click', () => guard(async () => {
+    const out = await device.shell($('cmd').value);
+    $('cmd-out').textContent = out || '(no output)';
+  }));
+
+  // Exactly what agent/lib/adb.js asks a device for, to prove the surface maps over.
+  $('probe').addEventListener('click', () => guard(async () => {
+    const checks = [
+      ['screenSize', 'wm size'],
+      ['deviceLocale', 'getprop persist.sys.locale'],
+      ['currentActivity', 'dumpsys window | grep -E "mCurrentFocus|mFocusedApp"'],
+      ['model', 'getprop ro.product.model'],
+      ['sdk', 'getprop ro.build.version.sdk'],
+    ];
+    const lines = [];
+    for (const [name, cmd] of checks) {
+      const out = (await device.shell(cmd)).trim();
+      lines.push(`${name.padEnd(16)} ${out.split('\n')[0] || '(empty)'}`);
+      log(`${name}: ok`, 'ok');
+    }
+    const hierarchy = await device.shell('uiautomator dump /dev/tty 2>/dev/null | head -c 200');
+    lines.push(`uiHierarchy      ${hierarchy.includes('<') ? 'XML returned ✓' : '(check manually)'}`);
+    $('cmd-out').textContent = lines.join('\n');
+  }));
+
+  $('shoot').addEventListener('click', () => guard(async () => {
+    setStatus($('shot-info'), 'capturing…', 'pending');
+    const png = await device.screenshot();
+    const url = URL.createObjectURL(new Blob([png], { type: 'image/png' }));
+    const img = $('shot');
+    img.onload = () => {
+      setStatus($('shot-info'), `${img.naturalWidth}×${img.naturalHeight}, ${(png.length / 1024).toFixed(0)} KB`, 'ok');
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+    img.hidden = false;
+    log(`Screenshot: ${png.length} bytes, PNG signature ok`, 'ok');
+  }));
+
+  $('shot').addEventListener('click', (e) => {
+    const img = $('shot');
+    const rect = img.getBoundingClientRect();
+    // The image is scaled down to fit; taps must land in the device's own space.
+    const x = Math.round((e.clientX - rect.left) / rect.width * img.naturalWidth);
+    const y = Math.round((e.clientY - rect.top) / rect.height * img.naturalHeight);
+    $('tap-x').value = x; $('tap-y').value = y;
+    log(`Picked ${x},${y} from the screenshot.`, 'dim');
+  });
+
+  $('tap').addEventListener('click', () => guard(async () => {
+    const x = Number($('tap-x').value), y = Number($('tap-y').value);
+    await device.shell(`input tap ${x} ${y}`);
+    log(`Tapped ${x},${y}`, 'ok');
+  }));
+
+  $('clear-log').addEventListener('click', () => { $('log').innerHTML = ''; });
+
+  navigator.usb?.addEventListener('disconnect', (e) => {
+    if (device && e.device === device.usb) {
+      device = null;
+      setConnected(false);
+      setStatus($('conn-status'), 'Cable pulled', 'bad');
+      log('Device disconnected.', 'err');
+    }
+  });
+
+  log('Ready. Kill any local adb server, then press Connect device.', 'info');
+  </script>
+</body>
+
+</html>
