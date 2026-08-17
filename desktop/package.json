@@ -2,7 +2,7 @@
   "name": "localinter-desktop",
   "version": "1.0.0",
   "private": true,
-  "description": "LocaLinter as one Windows app — the UI and the device-scan agent in a single process.",
+  "description": "LocaLinter as one Windows app \u2014 the UI and the device-scan agent in a single process.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -15,23 +15,47 @@
   "build": {
     "appId": "com.supergaming.localinter",
     "productName": "LocaLinter",
-    "directories": { "output": "dist" },
-    "files": ["main.js", "package.json"],
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "package.json"
+    ],
     "extraResources": [
       {
         "from": "..",
         "to": "app",
         "filter": [
-          "index.html", "styles.css", "main.js", "shell.js",
-          "device-scan.js", "device-scan.css",
+          "index.html",
+          "styles.css",
+          "main.js",
+          "shell.js",
+          "device-scan.js",
+          "device-scan.css",
           "assets/**/*",
           "agent/**/*",
-          "!agent/runs/**", "!agent/config.json", "!agent/dist/**",
-          "!agent/build/**", "!agent/tools/**"
+          "!agent/config.json",
+          "!agent/auth.json",
+          "!agent/memory/**",
+          "!agent/runs/**",
+          "!agent/dist/**",
+          "!agent/build/**",
+          "!agent/tools/**",
+          "!agent/build.js",
+          "!agent/.gitignore"
         ]
       }
     ],
-    "win": { "target": ["nsis"] },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": null
   }
 }
