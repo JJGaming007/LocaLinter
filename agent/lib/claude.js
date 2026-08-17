@@ -126,7 +126,7 @@ function priceFor(model, baseUrl) {
 }
 
 class ClaudeAnalyzer {
-  constructor({ apiKey, model = 'claude-opus-5', effort = 'high', baseUrl = '', extraChecks = '' }) {
+  constructor({ apiKey, model = 'claude-opus-5', effort = 'high', baseUrl = '', extraChecks = '', memory = '' }) {
     if (!apiKey) throw new Error('No Anthropic API key configured.');
     // A base URL points the SDK at a company gateway (LiteLLM and friends)
     // that speaks the same /v1/messages format. Empty means Anthropic direct.
@@ -137,6 +137,9 @@ class ClaudeAnalyzer {
     // Whatever the team wants looked for on top of the built-in checks —
     // house style, terms that must never appear, a glossary rule.
     this.extraChecks = String(extraChecks || '').trim();
+    // What earlier runs learned about this app. Cached like the main prompt,
+    // because it is identical on every screen of every run.
+    this.memory = String(memory || '').trim();
     this.usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0, costUSD: 0, priced: true };
     // Server-side refusal fallback is a beta; if this key cannot use it we stop
     // asking rather than failing every screen.
@@ -258,6 +261,11 @@ class ClaudeAnalyzer {
       },
       system: [
         { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+        ...(this.memory ? [{
+          type: 'text',
+          text: this.memory,
+          cache_control: { type: 'ephemeral' },
+        }] : []),
         ...(this.extraChecks ? [{
           type: 'text',
           text: `Additional checks requested for this project. Apply them alongside everything above, and report anything that breaks them as an issue:
@@ -378,6 +386,49 @@ ${alreadyTried.length ? `Already tried on this screen, skip them: ${alreadyTried
   }
 
   /** Short natural-language wrap-up over the whole run. */
+  /**
+   * Distil a finished run into a few lines worth keeping.
+   *
+   * Not a summary of the findings — that is what summarize() is for — but a
+   * description of the *app*: what its screens are, what interrupts a scan,
+   * which strings are brand names rather than untranslated text. It is handed
+   * back as context on the next run, so each scan starts less ignorant than
+   * the last.
+   */
+  async learn({ screens, issues, previousNotes }) {
+    const lines = [
+      previousNotes ? `What we already believed about this app:\n${previousNotes}\n` : '',
+      `Screens captured this run (${screens.length}):`,
+      ...screens.slice(0, 40).map((s) => `- ${s.id}: ${s.summary || '(no summary)'}`),
+      '',
+      `Recurring findings (${issues.length} total):`,
+      ...[...new Set(issues.map((i) => `${i.type}: "${String(i.text || '').slice(0, 60)}"`))].slice(0, 40).map((s) => `- ${s}`),
+    ].filter(Boolean);
+
+    const message = await this._send(() => this._messages.stream({
+      ...this._common(),
+      model: this.model,
+      max_tokens: 1200,
+      output_config: { effort: 'low' },
+      system: [{
+        type: 'text',
+        text: [
+          'You maintain a short standing description of a mobile game, used to brief a localization QA agent before it scans the app again.',
+          'Write at most 12 short lines. Cover only things that will still be true next run:',
+          '- what the main screens are and roughly how they connect',
+          '- anything that interrupts a scan (ads, daily rewards, login prompts) and how it is cleared',
+          '- strings that look like defects but are not (brand names, deliberate English, stylised text)',
+          'Merge with what we already believed; correct it where this run contradicts it.',
+          'No preamble, no headings, no markdown. Plain lines only.',
+        ].join('\n'),
+      }],
+      messages: [{ role: 'user', content: [{ type: 'text', text: lines.join('\n') }] }],
+    }));
+
+    const text = (message.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+    return text.slice(0, 2000);
+  }
+
   async summarize(issues, ctx) {
     const byType = {};
     for (const i of issues) byType[i.type] = (byType[i.type] || 0) + 1;

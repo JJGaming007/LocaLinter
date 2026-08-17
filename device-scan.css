@@ -262,24 +262,130 @@
   border-radius: var(--radius-sm);
 }
 
-.ds-screen {
+/* ── findings: screen rail + one screen's detail ──────────────────────────
+   One long scroll of every screen made a 120-screen run metres tall, and the
+   work became scrolling rather than reading. The rail answers "which screens
+   are bad", the pane answers "what is wrong here", and neither grows the page:
+   the panel is a fixed height and each side scrolls on its own. */
+.ds-results {
   display: grid;
-  grid-template-columns: 148px 1fr;
-  gap: 1rem;
-  padding: 0.9rem;
+  grid-template-columns: 132px 1fr;
+  gap: 0.85rem;
+  height: clamp(420px, 58vh, 720px);
+  min-height: 0;
+}
+
+.ds-rail {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-right: 0.25rem;
+}
+.ds-rail-item {
+  display: block;
+  width: 100%;
+  padding: 0.3rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--panel-2);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--transition), background var(--transition);
 }
-.ds-screen-shot img {
+.ds-rail-item:hover { border-color: var(--border-hover); background: var(--panel-3); }
+.ds-rail-item.active { border-color: var(--accent-line); background: var(--accent-dim); }
+.ds-rail-item img {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: contain;
+  object-position: center;
+  border-radius: 3px;
+  display: block;
+  background: var(--bg);
+}
+.ds-rail-noshot {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: 3px;
+  background: var(--bg);
+}
+.ds-rail-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3rem;
+  margin-top: 0.28rem;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+}
+.ds-rail-id { color: var(--faint); }
+.ds-rail-item.active .ds-rail-id { color: var(--accent-hi); }
+/* The count is the reason to click, so it carries the screen's worst severity. */
+.ds-rail-count {
+  min-width: 16px;
+  text-align: center;
+  padding: 0.02rem 0.25rem;
+  border-radius: 3px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.ds-rail-count.clean { color: var(--success); }
+.ds-rail-count.sev-low { color: var(--muted); background: var(--panel-3); border-color: var(--border); }
+.ds-rail-count.sev-medium { color: var(--warning); background: rgba(201, 160, 74, 0.12); border-color: rgba(201, 160, 74, 0.3); }
+.ds-rail-count.sev-high { color: var(--danger); background: var(--danger-bg); border-color: var(--danger-border); }
+
+.ds-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  padding: 0.8rem 0.9rem;
+}
+.ds-detail-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  margin-bottom: 0.3rem;
+}
+.ds-detail-head strong { font-size: 0.86rem; font-weight: 600; }
+.ds-detail-count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--muted);
+}
+.ds-detail-body {
+  display: grid;
+  grid-template-columns: minmax(280px, 38%) 1fr;
+  gap: 1rem;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.ds-detail-shot { overflow-y: auto; }
+.ds-detail-shot img {
   width: 100%;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-strong);
   cursor: zoom-in;
-  transition: border-color var(--transition);
   display: block;
+  transition: border-color var(--transition);
 }
-.ds-screen-shot img:hover { border-color: var(--accent-line); }
+.ds-detail-shot img:hover { border-color: var(--accent-line); }
+
+/* Narrow window: the shot stops competing with the findings for width. */
+@media (max-width: 1100px) {
+  .ds-results { grid-template-columns: 104px 1fr; }
+  .ds-detail-body { grid-template-columns: 1fr; }
+  .ds-detail-shot { max-height: 260px; }
+  .ds-detail-shot img { width: 100%; object-fit: contain; }
+}
 
 .ds-screen-head {
   display: flex;
@@ -298,7 +404,16 @@
   padding: 0.1rem 0.35rem;
 }
 
-.ds-issue-list { display: flex; flex-direction: column; gap: 0.45rem; }
+.ds-issue-list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-right: 0.3rem;
+}
+.ds-issue-msg { max-width: 80ch; }
 
 .ds-issue {
   border-left: 2px solid var(--border-strong);
@@ -306,9 +421,13 @@
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   padding: 0.55rem 0.75rem;
 }
-.ds-issue.sev-high { border-left-color: var(--danger); background: var(--danger-bg); }
-.ds-issue.sev-medium { border-left-color: var(--warning); background: rgba(201, 160, 74, 0.06); }
+/* Severity lives in the left edge and the badge, not in a full-width tint:
+   with eight high-severity findings the old rule painted the whole pane red,
+   which reads as noise rather than as eight separate things to fix. */
+.ds-issue.sev-high { border-left-color: var(--danger); }
+.ds-issue.sev-medium { border-left-color: var(--warning); }
 .ds-issue.sev-low { border-left-color: var(--border-hover); }
+.ds-issue:hover { background: var(--panel-2); }
 
 .ds-issue-top {
   display: flex;
@@ -417,3 +536,72 @@
 }
 .ds-field textarea:focus { border-color: var(--accent-line); }
 .ds-field textarea::placeholder { color: var(--faint); }
+
+/* ── dismissal ────────────────────────────────────────────────────────────
+   The one place a person teaches the agent something. Quiet until hovered,
+   because it sits on every finding and must not compete with the finding. */
+.ds-issue-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-top: 0.3rem;
+}
+.ds-dismiss {
+  flex: 0 0 auto;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--faint);
+  font-family: var(--font);
+  font-size: 0.68rem;
+  padding: 0.1rem 0.4rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition), color var(--transition), border-color var(--transition);
+}
+.ds-issue:hover .ds-dismiss,
+.ds-dismiss:focus-visible { opacity: 1; }
+.ds-dismiss:hover { color: var(--success); border-color: rgba(116, 160, 106, 0.35); }
+.ds-dismiss:disabled { opacity: 1; color: var(--muted); cursor: default; }
+
+/* Build picker sitting on top of the free-text package field: choose an
+   environment, or type one that is not in the list. */
+.ds-pkg-row { display: flex; gap: 0.4rem; align-items: center; }
+.ds-pkg-row select { flex: 1 1 auto; min-width: 0; }
+.ds-pkg-row input { flex: 1 1 auto; min-width: 0; }
+
+/* ── "why did it decide that" ─────────────────────────────────────────── */
+.ds-explain-row { display: flex; gap: 0.4rem; margin-bottom: 0.6rem; }
+.ds-explain-row input { flex: 1 1 auto; min-width: 0; }
+.ds-explain-out {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  padding: 0.7rem 0.85rem;
+  margin-bottom: 0.8rem;
+}
+.ds-explain-out .ds-hint { margin-bottom: 0.5rem; }
+.ds-verdict {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  margin-bottom: 0.4rem;
+  border: 1px solid var(--border-strong);
+  color: var(--muted);
+}
+.ds-verdict.reported { color: var(--danger); border-color: var(--danger-border); background: var(--danger-bg); }
+.ds-verdict.ignored { color: var(--success); border-color: rgba(116,160,106,.32); background: rgba(116,160,106,.1); }
+.ds-verdict.noted { color: var(--warning); border-color: rgba(201,160,74,.32); background: rgba(201,160,74,.1); }
+.ds-explain-table { width: 100%; border-collapse: collapse; font-size: 0.73rem; }
+.ds-explain-table th {
+  text-align: left; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--faint); padding: 0.3rem 0.5rem 0.3rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.ds-explain-table td { padding: 0.3rem 0.5rem 0.3rem 0; color: var(--text-2); border-bottom: 1px solid var(--border); vertical-align: top; }
+.ds-explain-table tr:last-child td { border-bottom: none; }

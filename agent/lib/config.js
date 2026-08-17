@@ -77,6 +77,29 @@ function save(patch) {
   return load();
 }
 
+/**
+ * Anthropic keys are `sk-ant-…` and around a hundred characters. Checking the
+ * shape catches the common mistake — something else pasted into the field —
+ * before it costs a minute of scanning and comes back as a bare 401.
+ *
+ * Only when talking to Anthropic directly, though. A gateway (LiteLLM, a
+ * company proxy) mints its own keys in whatever format it likes, and they are
+ * usually far shorter, so with a base URL set there is nothing to check: the
+ * gateway is the only thing that can judge its own credentials.
+ *
+ * Deliberately a shape check, not validation — only the far end can say
+ * whether a well-formed key is live.
+ */
+function keyLooksWrong(apiKey, baseUrl = '') {
+  if (!apiKey) return '';
+  if (baseUrl) return '';
+  if (!apiKey.startsWith('sk-ant-')) {
+    return 'That does not look like an Anthropic key — they begin with "sk-ant-". If it is for a gateway, set the base URL under Advanced.';
+  }
+  if (apiKey.length < 40) return `That key is only ${apiKey.length} characters; Anthropic keys are much longer. Was it truncated?`;
+  return '';
+}
+
 /** Config minus secrets, safe to hand to the browser UI. */
 function redact(cfg) {
   const { apiKey, ...rest } = cfg;
@@ -85,6 +108,7 @@ function redact(cfg) {
     apiKeySet: !!apiKey,
     apiKeyHint: apiKey ? `…${apiKey.slice(-4)}` : '',
     apiKeyFromEnv: !!process.env.ANTHROPIC_API_KEY && !readStoredKey(),
+    apiKeyWarning: keyLooksWrong(apiKey, cfg.baseUrl),
   };
 }
 
@@ -97,4 +121,4 @@ function readStoredKey() {
   }
 }
 
-module.exports = { load, save, redact, DEFAULTS, CONFIG_PATH };
+module.exports = { load, save, redact, keyLooksWrong, DEFAULTS, CONFIG_PATH };

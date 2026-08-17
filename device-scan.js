@@ -1,21 +1,15 @@
 /**
  * Device Scan tab.
  *
- * The browser cannot speak ADB or hold an API key safely, so everything real
- * happens in the local agent (agent/server.js). This file is the control panel:
- * it hands the already-loaded sheet to the agent, streams the run back over
- * SSE, and renders the findings.
+ * A window cannot speak ADB or hold an API key safely, so the real work happens
+ * in the app's own service (agent/server.js) running in the main process. This
+ * file is the control panel: it hands the already-loaded sheet over, streams the
+ * run back via SSE, and renders the findings.
  */
 (() => {
   'use strict';
 
   const $ = (id) => document.getElementById(id);
-  const AGENT_KEY = 'localinter_agent_url';
-  // Where testers get LocaLinter-Agent.exe (build it with `npm run build:exe`
-  // in agent/). Point this at wherever you host it — a GitHub release asset,
-  // say — and the panel links straight there. Left empty it names the file
-  // without linking, so nothing here promises a download that does not exist.
-  const AGENT_DOWNLOAD_URL = '';
 
   const el = {};
   let agentOk = false;
@@ -30,27 +24,21 @@
 
   function init() {
     [
-      'ds-agent-url', 'ds-reconnect', 'ds-watch', 'ds-agent-status', 'ds-api-key', 'ds-save-key', 'ds-key-state',
-      'ds-autostart-row', 'ds-autostart', 'ds-autostart-text',
+      'ds-agent-status', 'ds-api-key', 'ds-save-key', 'ds-key-state',
       'ds-adb-row', 'ds-adb-state', 'ds-get-adb',
-      'ds-mode', 'ds-device', 'ds-sheet', 'ds-language', 'ds-package', 'ds-route', 'ds-route-card', 'ds-probe', 'ds-start', 'ds-stop',
+      'ds-mode', 'ds-device', 'ds-sheet', 'ds-language', 'ds-package', 'ds-build', 'ds-route', 'ds-route-card', 'ds-probe', 'ds-start', 'ds-stop',
       'ds-advanced-toggle', 'ds-advanced', 'ds-probe-out', 'ds-agent-out', 'ds-target-status',
       'ds-max-screens', 'ds-max-actions', 'ds-max-depth', 'ds-model', 'ds-effort', 'ds-adb-path',
       'ds-vision', 'ds-scroll', 'ds-longpress', 'ds-blocked', 'ds-base-url', 'ds-extra-checks',
       'ds-run-panel', 'ds-run-status', 'ds-stat-screens', 'ds-stat-actions', 'ds-stat-issues',
       'ds-stat-queue', 'ds-summary', 'ds-log', 'ds-results-panel', 'ds-findings',
-      'ds-filter-severity', 'ds-filter-type', 'ds-filter-text', 'ds-export',
+      'ds-filter-severity', 'ds-filter-type', 'ds-filter-text', 'ds-export', 'ds-clear',
+      'ds-explain', 'ds-explain-btn', 'ds-explain-out',
       'ds-shot-overlay', 'ds-shot-img', 'ds-shot-caption', 'ds-shot-close', 'badge-device',
     ].forEach((id) => { el[id.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = $(id); });
 
-    if (!el.dsAgentUrl) return; // tab not present
+    if (!el.dsAgentStatus) return; // tab not present
 
-    const saved = localStorage.getItem(AGENT_KEY);
-    if (saved) el.dsAgentUrl.value = saved;
-
-    el.dsReconnect.addEventListener('click', connectAndLoadRoutes);
-    el.dsWatch.addEventListener('click', () => (watching() ? stopWatching() : startWatching()));
-    el.dsAutostart.addEventListener('change', toggleAutostart);
     el.dsSaveKey.addEventListener('click', saveKey);
     el.dsGetAdb.addEventListener('click', downloadAdb);
     el.dsAdvancedToggle.addEventListener('click', () => {
@@ -64,12 +52,22 @@
     el.dsStart.addEventListener('click', start);
     el.dsStop.addEventListener('click', stop);
     el.dsExport.addEventListener('click', exportJson);
+    el.dsClear.addEventListener('click', clearHistory);
+    el.dsExplainBtn.addEventListener('click', explainString);
+    el.dsExplain.addEventListener('keydown', (e) => { if (e.key === 'Enter') explainString(); });
     el.dsShotClose.addEventListener('click', () => el.dsShotOverlay.classList.add('hidden'));
     el.dsShotOverlay.addEventListener('click', (e) => {
       if (e.target === el.dsShotOverlay) el.dsShotOverlay.classList.add('hidden');
     });
     [el.dsFilterSeverity, el.dsFilterType].forEach((s) => s.addEventListener('change', renderFindings));
     el.dsFilterText.addEventListener('input', renderFindings);
+
+    fillBuilds();
+    el.dsBuild.addEventListener('change', () => {
+      if (el.dsBuild.value) el.dsPackage.value = el.dsBuild.value;
+      updateStartState();
+    });
+    el.dsPackage.addEventListener('input', syncBuildSelect);
 
     el.dsSheet.addEventListener('change', onSheetChange);
     el.dsRoute.addEventListener('change', renderRouteCard);
@@ -84,10 +82,44 @@
       if (!agentOk && !running) connectAndLoadRoutes();
     });
     // Loading a sheet anywhere in the app re-points the scan at it.
-    document.addEventListener('localinter:sheet', refreshSheets);
+    document.addEventListener('localinter:sheet', () => {
+      refreshSheets();
+      // The sheet and the build are two halves of one environment.
+      const key = window.LocaLinter && window.LocaLinter.getCurrentPresetKey && window.LocaLinter.getCurrentPresetKey();
+      const preset = key && (window.LocaLinter.getPresets() || []).find((p) => p.key === key);
+      if (preset && preset.pkg && el.dsPackage.value.trim() !== preset.pkg) {
+        el.dsPackage.value = preset.pkg;
+        syncBuildSelect();
+        log(`Sheet is ${preset.label}, so the scan will target ${preset.pkg}.`, 'info');
+      }
+    });
 
     onModeChange();
     refreshSheets();
+  }
+
+  /**
+   * The same game ships as five builds, one per environment, and each has its
+   * own package — and its own memory. Choosing from the list is the difference
+   * between scanning Latam and teaching the Global Prod memory by mistake.
+   */
+  function fillBuilds() {
+    const presets = (window.LocaLinter && window.LocaLinter.getPresets) ? window.LocaLinter.getPresets() : [];
+    for (const p of presets.filter((x) => x.pkg)) {
+      const o = document.createElement('option');
+      o.value = p.pkg;
+      o.textContent = `${p.label} — ${p.pkg}`;
+      el.dsBuild.appendChild(o);
+    }
+    syncBuildSelect();
+  }
+
+  /** Keep the dropdown honest when the package is typed or loaded from config. */
+  function syncBuildSelect() {
+    if (!el.dsBuild) return;
+    const pkg = (el.dsPackage.value || '').trim();
+    const match = [...el.dsBuild.options].some((o) => o.value === pkg);
+    el.dsBuild.value = match ? pkg : '';
   }
 
   async function connectAndLoadRoutes() {
@@ -97,8 +129,9 @@
 
   // ── agent ───────────────────────────────────────────────────────────────
 
+  // Same-origin: the app serves both the UI and this API from one process.
   function agentUrl() {
-    return (el.dsAgentUrl.value || 'http://127.0.0.1:8790').replace(/\/+$/, '');
+    return '';
   }
 
   async function api(path, options) {
@@ -112,94 +145,32 @@
       // fetch only rejects when the request never reached the agent. "Failed to
       // fetch" tells the user nothing, so say what is actually wrong.
       agentOk = false;
-      setStatus(el.dsAgentStatus, 'Not running', 'bad');
-      showAgentError(`Cannot reach the agent at ${agentUrl()}.`);
+      setStatus(el.dsAgentStatus, 'Stopped', 'bad');
+      showAgentError('The scanning service stopped responding.');
       updateStartState();
-      throw new Error(`The agent is not running at ${agentUrl()} — start it with "npm start" in agent/, then hit Reconnect.`);
+      throw new Error('The scanning service stopped responding. Restart LocaLinter.');
     }
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body.error || `agent returned ${res.status}`);
     return body;
   }
 
-  // The agent has to run on the machine the device is plugged into, so every
-  // tester needs their own copy. Point them at the one-file build rather than a
-  // git checkout and a terminal.
   function showAgentError(headline) {
-    const get = AGENT_DOWNLOAD_URL
-      ? `<a href="${AGENT_DOWNLOAD_URL}">Download LocaLinter-Agent.exe</a> and run it`
-      : 'Run <code>LocaLinter-Agent.exe</code>';
-    el.dsAgentOut.innerHTML =
-      `<div class="ds-msg bad">${escapeHtml(headline)}<br>` +
-      `${get}. This tab is watching for it and will connect on its own — no need to come back here.<br>` +
-      `Working from a source checkout? <code>npm start</code> in <code>agent/</code>.</div>`;
-    startWatching();
+    el.dsAgentOut.innerHTML = `<div class="ds-msg bad">${escapeHtml(headline)}</div>`;
   }
 
-  /* ── watching for the agent ───────────────────────────────────────────────
-     A page cannot launch a local process, so the next best thing is to stop
-     making the tester come back and press Reconnect: once the agent is missing
-     we poll quietly in the background and connect the moment it answers. The
-     button is a manual override for anyone who would rather not wait. */
-
-  let watchTimer = null;
-  const WATCH_MS = 2000;
-
-  function watching() {
-    return watchTimer !== null;
-  }
-
-  function startWatching() {
-    if (watching() || agentOk) return;
-    el.dsWatch.classList.remove('hidden');
-    el.dsWatch.classList.add('is-open');
-    el.dsWatch.textContent = 'Watching for agent…';
-
-    const tick = async () => {
-      if (agentOk) return stopWatching();
-      // A backgrounded tab has nobody watching it; wait until it is looked at
-      // again rather than polling all night.
-      if (document.hidden) {
-        watchTimer = setTimeout(tick, WATCH_MS);
-        return;
-      }
-      try {
-        // Deliberately not api(): a failure here is expected and must not
-        // repaint the panel or recurse back into showAgentError().
-        const res = await fetch(`${agentUrl()}/api/health`, { headers: { 'content-type': 'application/json' } });
-        if (res.ok) {
-          stopWatching();
-          await connectAndLoadRoutes();
-          return;
-        }
-      } catch { /* still not there; keep waiting */ }
-      watchTimer = setTimeout(tick, WATCH_MS);
-    };
-    watchTimer = setTimeout(tick, WATCH_MS);
-  }
-
-  function stopWatching() {
-    if (watchTimer) clearTimeout(watchTimer);
-    watchTimer = null;
-    el.dsWatch.classList.remove('is-open');
-    el.dsWatch.textContent = 'Watch for agent';
-    if (agentOk) el.dsWatch.classList.add('hidden');
-  }
 
   async function connect() {
     setStatus(el.dsAgentStatus, 'Connecting…', 'pending');
-    localStorage.setItem(AGENT_KEY, agentUrl());
     // Whatever the last attempt said no longer applies.
     el.dsAgentOut.innerHTML = '';
     try {
       const health = await api('/api/health');
       agentOk = true;
-      stopWatching();
       setStatus(el.dsAgentStatus, `Connected · v${health.version} · node ${health.node}`, 'ok');
       const { config } = await api('/api/config');
       agentConfig = config;
       applyConfig(config);
-      await refreshAutostart();
       await refreshAdb();
       await refreshDevices();
       refreshLanguages();
@@ -214,56 +185,26 @@
     }
   }
 
-  /**
-   * Start-at-login is the actual answer to "why isn't it connected" — an agent
-   * the OS launches is one nobody has to remember. Only offered where the agent
-   * can implement it, so the row stays hidden on anything but Windows.
-   */
-  async function refreshAutostart() {
-    try {
-      const s = await api('/api/autostart');
-      if (!s.supported) {
-        el.dsAutostartRow.classList.add('hidden');
-        return;
-      }
-      el.dsAutostartRow.classList.remove('hidden');
-      el.dsAutostart.checked = !!s.enabled && !s.stale;
-      el.dsAutostartText.textContent = s.stale
-        ? 'The saved entry points somewhere else — switch this off and on to repoint it'
-        : s.enabled
-          ? 'The agent starts with Windows'
-          : 'Launch the agent automatically when you sign in to Windows';
-    } catch {
-      el.dsAutostartRow.classList.add('hidden');
-    }
-  }
-
-  async function toggleAutostart() {
-    const enable = el.dsAutostart.checked;
-    el.dsAutostart.disabled = true;
-    try {
-      await api('/api/autostart', { method: 'POST', body: JSON.stringify({ enable }) });
-      log(enable ? 'The agent will now start when you sign in to Windows.' : 'The agent will no longer start automatically.', 'info');
-    } catch (e) {
-      el.dsAutostart.checked = !enable;   // the OS refused; do not lie about it
-      log(`Could not change start-at-login: ${e.message}`, 'error');
-    } finally {
-      el.dsAutostart.disabled = false;
-      await refreshAutostart();
-    }
-  }
 
   function applyConfig(c) {
-    el.dsKeyState.textContent = c.apiKeySet
-      ? `Key configured ${c.apiKeyHint}${c.apiKeyFromEnv ? ' (from ANTHROPIC_API_KEY)' : ''}.`
-      : 'No API key set — the scan cannot run without one.';
-    el.dsKeyState.className = 'ds-hint ' + (c.apiKeySet ? 'ok' : 'bad');
+    // A stored key that cannot possibly work should say so here, not surface
+    // as a 401 a minute into a scan.
+    if (c.apiKeySet && c.apiKeyWarning) {
+      el.dsKeyState.textContent = `${c.apiKeyWarning} Get one from console.anthropic.com.`;
+      el.dsKeyState.className = 'ds-hint bad';
+    } else {
+      el.dsKeyState.textContent = c.apiKeySet
+        ? `Key configured ${c.apiKeyHint}${c.apiKeyFromEnv ? ' (from ANTHROPIC_API_KEY)' : ''}.`
+        : 'No API key set — the scan cannot run without one.';
+      el.dsKeyState.className = 'ds-hint ' + (c.apiKeySet ? 'ok' : 'bad');
+    }
     if (c.model) el.dsModel.value = c.model;
     if (c.effort) el.dsEffort.value = c.effort;
     el.dsAdbPath.value = c.adbPath || '';
     el.dsBaseUrl.value = c.baseUrl || '';
     el.dsExtraChecks.value = c.extraChecks || '';
     el.dsPackage.value = c.androidPackage || '';
+    syncBuildSelect();
     el.dsMaxScreens.value = c.maxScreens;
     el.dsMaxActions.value = c.maxActions;
     el.dsMaxDepth.value = c.maxDepth;
@@ -798,26 +739,24 @@
 
   const SEVERITY_RANK = { high: 3, medium: 2, low: 1 };
 
-  function renderFindings() {
-    // keep the type filter in sync with what we have actually seen
-    const types = [...new Set(issues.map((i) => i.type))].sort();
-    const current = el.dsFilterType.value;
-    if (el.dsFilterType.options.length !== types.length + 1) {
-      el.dsFilterType.innerHTML = '<option value="all">All types</option>';
-      for (const t of types) {
-        const o = document.createElement('option');
-        o.value = t;
-        o.textContent = t.replace(/_/g, ' ');
-        el.dsFilterType.appendChild(o);
-      }
-      if (types.includes(current)) el.dsFilterType.value = current;
-    }
+  /**
+   * Findings are shown as a screen list beside one screen's detail, not as one
+   * long scroll.
+   *
+   * Stacking every screen with its shot and its issues meant a 120-screen run
+   * produced a page metres long, where finding the screen you cared about was
+   * the hard part. A rail of thumbnails answers "which screens are bad" at a
+   * glance, and the pane beside it answers "what is wrong here" — both scroll
+   * independently inside a panel that never grows.
+   */
+  let selectedScreenId = null;
 
+  function visibleIssues() {
     const minSev = el.dsFilterSeverity.value === 'high' ? 3 : el.dsFilterSeverity.value === 'medium' ? 2 : 1;
     const typeFilter = el.dsFilterType.value;
     const q = el.dsFilterText.value.trim().toLowerCase();
 
-    const shown = issues.filter((i) => {
+    return issues.filter((i) => {
       if ((SEVERITY_RANK[i.severity] || 1) < minSev) return false;
       if (typeFilter !== 'all' && i.type !== typeFilter) return false;
       if (q) {
@@ -826,6 +765,29 @@
       }
       return true;
     });
+  }
+
+  function syncTypeFilter() {
+    const types = [...new Set(issues.map((i) => i.type))].sort();
+    const current = el.dsFilterType.value;
+    if (el.dsFilterType.options.length === types.length + 1) return;
+    el.dsFilterType.innerHTML = '<option value="all">All types</option>';
+    for (const t of types) {
+      const o = document.createElement('option');
+      o.value = t;
+      o.textContent = t.replace(/_/g, ' ');
+      el.dsFilterType.appendChild(o);
+    }
+    if (types.includes(current)) el.dsFilterType.value = current;
+  }
+
+  function shotUrl(screen) {
+    return screen ? `${agentUrl()}/api/run/${runId}/screenshot/${screen.file}` : '';
+  }
+
+  function renderFindings() {
+    syncTypeFilter();
+    const shown = visibleIssues();
 
     if (!shown.length) {
       el.dsFindings.innerHTML = issues.length
@@ -834,41 +796,88 @@
       return;
     }
 
-    // group by screen, screens in capture order
-    const byScreen = new Map();
+    // Every captured screen appears, so a clean screen is visible as clean
+    // rather than simply absent — but only screens with a match when filtering.
+    const counts = new Map();
+    for (const i of shown) counts.set(i.screenId, (counts.get(i.screenId) || 0) + 1);
+    const worst = new Map();
     for (const i of shown) {
-      if (!byScreen.has(i.screenId)) byScreen.set(i.screenId, []);
-      byScreen.get(i.screenId).push(i);
+      const rank = SEVERITY_RANK[i.severity] || 1;
+      if (rank > (worst.get(i.screenId) || 0)) worst.set(i.screenId, rank);
     }
 
-    const html = [...byScreen.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([screenId, list]) => {
-        const screen = screens.get(screenId);
-        const shot = screen ? `${agentUrl()}/api/run/${runId}/screenshot/${screen.file}` : '';
-        list.sort((a, b) => (SEVERITY_RANK[b.severity] || 0) - (SEVERITY_RANK[a.severity] || 0));
-        return `
-          <div class="ds-screen">
-            <div class="ds-screen-shot">
-              ${shot ? `<img src="${shot}" alt="${escapeHtml(screenId)}" data-shot="${shot}" data-caption="${escapeHtml((screen && screen.summary) || screenId)}" loading="lazy" />` : ''}
-            </div>
-            <div class="ds-screen-body">
-              <div class="ds-screen-head">
-                <strong>${escapeHtml(screenId)}</strong>
-                <span class="ds-screen-meta">${escapeHtml((screen && screen.summary) || '')}</span>
-              </div>
-              ${screen && screen.path && screen.path.length
-            ? `<div class="ds-path">Reached via: ${screen.path.map((p) => `<span>${escapeHtml(truncate(p, 28))}</span>`).join(' › ')}</div>`
-            : ''}
-              <div class="ds-issue-list">
-                ${list.map(issueRow).join('')}
-              </div>
-            </div>
-          </div>`;
-      })
-      .join('');
+    const filtering = el.dsFilterSeverity.value !== 'all' || el.dsFilterType.value !== 'all' || !!el.dsFilterText.value.trim();
+    const ids = [...screens.keys()]
+      .sort((a, b) => a.localeCompare(b))
+      .filter((id) => !filtering || counts.has(id));
 
-    el.dsFindings.innerHTML = html;
+    if (!ids.includes(selectedScreenId)) {
+      // Land on the worst screen rather than the first — that is the one you
+      // opened the panel to look at.
+      selectedScreenId = ids.slice().sort((a, b) =>
+        (worst.get(b) || 0) - (worst.get(a) || 0) || (counts.get(b) || 0) - (counts.get(a) || 0)
+      )[0] || ids[0] || null;
+    }
+
+    const sevWord = (rank) => (rank >= 3 ? 'high' : rank === 2 ? 'medium' : 'low');
+
+    const rail = ids.map((id) => {
+      const screen = screens.get(id);
+      const n = counts.get(id) || 0;
+      const shot = shotUrl(screen);
+      return `
+        <button class="ds-rail-item${id === selectedScreenId ? ' active' : ''}" data-screen="${escapeHtml(id)}" type="button">
+          ${shot ? `<img src="${shot}" alt="" loading="lazy" />` : '<span class="ds-rail-noshot"></span>'}
+          <span class="ds-rail-meta">
+            <span class="ds-rail-id">${escapeHtml(id.replace(/^screen-/, ''))}</span>
+            <span class="ds-rail-count ${n ? 'sev-' + sevWord(worst.get(id) || 1) : 'clean'}">${n || '✓'}</span>
+          </span>
+        </button>`;
+    }).join('');
+
+    const screen = screens.get(selectedScreenId);
+    const list = shown
+      .filter((i) => i.screenId === selectedScreenId)
+      .sort((a, b) => (SEVERITY_RANK[b.severity] || 0) - (SEVERITY_RANK[a.severity] || 0));
+    const shot = shotUrl(screen);
+
+    const detail = `
+      <div class="ds-detail-head">
+        <strong>${escapeHtml(selectedScreenId || '')}</strong>
+        <span class="ds-screen-meta">${escapeHtml((screen && screen.summary) || '')}</span>
+        <span class="ds-detail-count">${list.length} finding${list.length === 1 ? '' : 's'}</span>
+      </div>
+      ${screen && screen.path && screen.path.length
+        ? `<div class="ds-path">Reached via: ${screen.path.map((p) => `<span>${escapeHtml(truncate(p, 28))}</span>`).join(' › ')}</div>`
+        : ''}
+      <div class="ds-detail-body">
+        <div class="ds-detail-shot">
+          ${shot ? `<img src="${shot}" alt="${escapeHtml(selectedScreenId || '')}" data-shot="${shot}" data-caption="${escapeHtml((screen && screen.summary) || selectedScreenId || '')}" />` : ''}
+        </div>
+        <div class="ds-issue-list">
+          ${list.length ? list.map(issueRow).join('') : '<div class="ds-empty">Nothing wrong on this screen.</div>'}
+        </div>
+      </div>`;
+
+    el.dsFindings.innerHTML =
+      `<div class="ds-results">
+         <div class="ds-rail" role="listbox" aria-label="Captured screens">${rail}</div>
+         <div class="ds-detail">${detail}</div>
+       </div>`;
+
+    el.dsFindings.querySelectorAll('.ds-rail-item').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        selectedScreenId = btn.dataset.screen;
+        renderFindings();
+      });
+    });
+    const active = el.dsFindings.querySelector('.ds-rail-item.active');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+
+    el.dsFindings.querySelectorAll('.ds-dismiss').forEach((btn) => {
+      btn.addEventListener('click', () => dismissFinding(btn));
+    });
+
     el.dsFindings.querySelectorAll('img[data-shot]').forEach((img) => {
       img.addEventListener('click', () => {
         el.dsShotImg.src = img.dataset.shot;
@@ -876,6 +885,84 @@
         el.dsShotOverlay.classList.remove('hidden');
       });
     });
+  }
+
+  /** Wipes stored runs, and the current view with them. */
+  async function clearHistory() {
+    if (running) return toast('Stop the scan before clearing.', 'error');
+    try {
+      const r = await api('/api/runs/clear', { method: 'POST' });
+      issues = [];
+      screens = new Map();
+      selectedScreenId = null;
+      runId = null;
+      el.dsFindings.innerHTML = '';
+      el.dsLog.innerHTML = '';
+      el.dsSummary.classList.add('hidden');
+      el.dsResultsPanel.classList.add('hidden');
+      el.dsRunPanel.classList.add('hidden');
+      (window.locaLinterSetBadge || (() => {}))(el.badgeDevice, 0);
+      const mb = (r.bytes || 0) / (1024 * 1024);
+      toast(r.removed ? `Cleared ${r.removed} run${r.removed === 1 ? '' : 's'} (${mb.toFixed(1)} MB).` : 'Nothing to clear.');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+
+  /**
+   * "Not an issue" is the only signal a human gives the agent, so it is stored
+   * against the app rather than the run: it suppresses the finding on every
+   * later scan, and is quoted back to the model as context.
+   */
+  async function dismissFinding(btn) {
+    const issue = { type: btn.dataset.type, text: btn.dataset.text, key: btn.dataset.key };
+    btn.disabled = true;
+    btn.textContent = 'Remembering…';
+    try {
+      await api('/api/memory/dismiss', { method: 'POST', body: JSON.stringify({ issue }) });
+      issues = issues.filter((i) => !(i.type === issue.type && (i.text || '') === issue.text));
+      (window.locaLinterSetBadge || (() => {}))(el.badgeDevice, issues.length);
+      renderFindings();
+      toast('Noted — I will not report that again.');
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = 'Not an issue';
+      toast(e.message, 'error');
+    }
+  }
+
+  /**
+   * Answers "why did it flag this" and, more usefully, "why did it not" —
+   * against the sheet that is actually loaded, not a description of the rules.
+   */
+  async function explainString() {
+    const text = el.dsExplain.value.trim();
+    const s = sheet();
+    if (!text) return;
+    if (!s) return toast('Load a sheet first.', 'error');
+
+    el.dsExplainOut.classList.remove('hidden');
+    el.dsExplainOut.innerHTML = '<div class="ds-hint">Checking…</div>';
+    try {
+      const r = await api('/api/sheet/explain', {
+        method: 'POST',
+        body: JSON.stringify({ sheet: s, text, targetLanguage: el.dsLanguage.value }),
+      });
+      const rows = (r.rows || []).map((m) => `
+        <tr><td>${escapeHtml(m.key)}</td><td>${m.row}</td><td>${escapeHtml(m.matchedColumn)}</td>
+        <td>${escapeHtml(m.source || '')}</td><td>${escapeHtml(m.target || '')}</td></tr>`).join('');
+      const near = (r.near || []).map((m) => `
+        <tr><td>${escapeHtml(m.key)}</td><td>${m.row}</td><td>${escapeHtml(m.matchedColumn)} · ${m.score}%</td>
+        <td colspan="2">${escapeHtml(m.value || '')}</td></tr>`).join('');
+      el.dsExplainOut.innerHTML = `
+        <div class="ds-verdict ${escapeHtml(r.verdict)}">${escapeHtml(r.verdict)}</div>
+        <p class="ds-hint">${escapeHtml(r.reason)}</p>
+        ${rows || near ? `<table class="ds-explain-table">
+          <thead><tr><th>Key</th><th>Row</th><th>Matched</th><th>${escapeHtml(r.targetHeader ? 'Source' : '')}</th><th>${escapeHtml(r.targetHeader || '')}</th></tr></thead>
+          <tbody>${rows}${near}</tbody></table>` : ''}`;
+    } catch (e) {
+      el.dsExplainOut.innerHTML = `<div class="ds-msg bad">${escapeHtml(e.message)}</div>`;
+    }
   }
 
   function issueRow(i) {
@@ -895,7 +982,11 @@
         <div class="ds-issue-text">“${escapeHtml(truncate(i.text, 200))}”</div>
         ${i.expected ? `<div class="ds-issue-expected">Sheet says: “${escapeHtml(truncate(i.expected, 200))}”</div>` : ''}
         <div class="ds-issue-msg">${escapeHtml(i.message)}</div>
-        ${bits.length ? `<div class="ds-issue-meta">${bits.join(' · ')}</div>` : ''}
+        <div class="ds-issue-foot">
+          ${bits.length ? `<span class="ds-issue-meta">${bits.join(' · ')}</span>` : '<span></span>'}
+          <button class="ds-dismiss" type="button" title="Remember that this is not a defect, and stop reporting it"
+            data-type="${escapeHtml(i.type)}" data-text="${escapeHtml(i.text || '')}" data-key="${escapeHtml(i.key || '')}">Not an issue</button>
+        </div>
       </div>`;
   }
 

@@ -140,4 +140,37 @@ function listRuns() {
     }));
 }
 
-module.exports = { Run, createRun, getRun, listRuns, RUNS_DIR };
+/**
+ * Delete finished runs and their screenshots.
+ *
+ * Runs accumulate silently — a few megabytes of PNGs each — and there was no
+ * way to be rid of them short of finding the folder by hand. A running scan is
+ * left alone; everything else goes.
+ */
+function clearRuns() {
+  let removed = 0;
+  let bytes = 0;
+  for (const [id, run] of [...runs.entries()]) {
+    if (run && run.status === 'running') continue;
+    runs.delete(id);
+  }
+  let entries = [];
+  try { entries = fs.readdirSync(RUNS_DIR, { withFileTypes: true }); } catch { return { removed, bytes }; }
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    if (runs.has(e.name)) continue;          // still running
+    const dir = path.join(RUNS_DIR, e.name);
+    try {
+      for (const f of fs.readdirSync(dir, { recursive: true, withFileTypes: true })) {
+        if (f.isFile()) {
+          try { bytes += fs.statSync(path.join(f.parentPath || f.path || dir, f.name)).size; } catch { /* going anyway */ }
+        }
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+      removed++;
+    } catch { /* locked by something; leave it */ }
+  }
+  return { removed, bytes };
+}
+
+module.exports = { Run, createRun, getRun, listRuns, clearRuns, RUNS_DIR };
