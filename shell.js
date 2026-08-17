@@ -105,19 +105,21 @@
    * navigating away from your results.
    */
   function wireSheetPicker() {
-    const btn = $('change-sheet-btn');
+    const buttons = [$('change-sheet-btn'), $('toolbar-change-btn')].filter(Boolean);
     const picker = $('drop-content-idle');
-    if (!btn || !picker) return;
+    if (!buttons.length || !picker) return;
 
     const setOpen = (open) => {
       document.body.classList.toggle('picker-open', open);
-      btn.classList.toggle('is-open', open);
-      btn.setAttribute('aria-expanded', String(open));
+      buttons.forEach((b) => {
+        b.classList.toggle('is-open', open);
+        b.setAttribute('aria-expanded', String(open));
+      });
     };
 
-    btn.addEventListener('click', () => {
+    buttons.forEach((b) => b.addEventListener('click', () => {
       setOpen(!document.body.classList.contains('picker-open'));
-    });
+    }));
 
     // Loading a sheet is the point of the picker, so it closes itself.
     document.addEventListener('localinter:sheet', () => setOpen(false));
@@ -181,18 +183,25 @@
    * you are on.
    */
   function wireAgentStatus() {
-    const agentStatus = $('ds-agent-status');
-    const dot = $('sb-agent-state');
-    if (!agentStatus || !dot) return;
+    const source = $('ds-agent-status');
+    const line = $('sb-agent-state');
+    const dot = $('tb-agent');
+    if (!source) return;
 
     const sync = () => {
-      const on = agentStatus.classList.contains('ok');
-      const busy = agentStatus.classList.contains('pending');
-      dot.classList.toggle('on', on);
-      dot.classList.toggle('busy', busy);
-      dot.textContent = busy ? 'agent connecting' : on ? 'agent online' : 'agent offline';
+      const on = source.classList.contains('ok');
+      const busy = source.classList.contains('pending');
+      const label = busy ? 'Service starting…' : on ? 'Scanning service ready' : 'Scanning service stopped';
+      for (const el of [line, dot]) {
+        if (!el) continue;
+        el.classList.toggle('on', on);
+        el.classList.toggle('busy', busy);
+        el.classList.toggle('bad', !on && !busy);
+      }
+      if (line) line.textContent = label;
+      if (dot) dot.title = label;
     };
-    new MutationObserver(sync).observe(agentStatus, {
+    new MutationObserver(sync).observe(source, {
       attributes: true,
       attributeFilter: ['class'],
       childList: true,
@@ -201,6 +210,7 @@
     });
     sync();
   }
+
 
   /* ── shortcuts ───────────────────────────────────────────── */
 

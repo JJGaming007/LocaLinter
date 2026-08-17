@@ -1,2 +1,6 @@
 .vercel
 .env*.local
+
+# Google OAuth desktop client — never commit this.
+google-client.json
+agent/google-client.json

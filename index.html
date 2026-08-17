@@ -12,8 +12,8 @@
   <link
     href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;450;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap"
     rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=2.6" />
-  <link rel="stylesheet" href="device-scan.css?v=2.1" />
+  <link rel="stylesheet" href="styles.css?v=3.1" />
+  <link rel="stylesheet" href="device-scan.css?v=2.6" />
   <link rel="icon" type="image/png" href="/assets/favicon-32.png" />
   <link rel="apple-touch-icon" href="/assets/logo.png" />
   <!-- Replace content with your Google OAuth Client ID (from Google Cloud Console) -->
@@ -21,9 +21,8 @@
   <!-- Only these Google Workspace domains may sign in (comma-separated) -->
   <meta name="google-allowed-domains" content="supergaming.com" />
   <script src="assets/xlsx.min.js"></script>
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="shell.js?v=1.3" defer></script>
-  <script src="main.js?v=2.3" defer></script>
+  <script src="shell.js?v=2.1" defer></script>
+  <script src="main.js?v=3.4" defer></script>
   <script>
     // Skip the gate's first paint when this tab already holds a session.
     try {
@@ -33,7 +32,7 @@
       }
     } catch (e) { /* no session hint available */ }
   </script>
-  <script src="device-scan.js?v=2.0" defer></script>
+  <script src="device-scan.js?v=2.8" defer></script>
 </head>
 
 <body>
@@ -146,6 +145,9 @@
       </nav>
 
       <div class="sb-foot">
+        <div class="sb-agent-row">
+          <span id="sb-agent-state" class="sb-agent">Service starting…</span>
+        </div>
         <button id="qt-toggle" class="sb-action" type="button" title="Quick Translator">
           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -160,10 +162,6 @@
           <kbd class="sb-kbd">T</kbd>
         </button>
 
-        <!-- Whether the local device-scan agent is reachable right now -->
-        <div class="sb-agent-row">
-          <span id="sb-agent-state" class="sb-agent">agent offline</span>
-        </div>
 
         <div class="sb-user-row">
           <button id="header-signin-btn" class="sb-signin hidden" type="button">
@@ -222,14 +220,30 @@
           </svg>
         </button>
         <nav class="crumbs" aria-label="Breadcrumb">
-          <span>LocaLinter</span>
-          <span class="crumb-sep">/</span>
           <span id="crumb-sheet">No sheet</span>
           <span class="crumb-sep">/</span>
           <span class="crumb-now" id="crumb-tab">Format issues</span>
         </nav>
         <div class="topbar-actions">
           <span class="topbar-meta" id="topbar-meta"></span>
+          <span class="tb-agent" id="tb-agent" title="Scanning service"><i class="tb-dot"></i></span>
+          <span class="tb-sep"></span>
+          <button id="toolbar-change-btn" class="tb-btn" type="button" title="Open a different sheet">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="17 1 21 5 17 9" />
+              <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+              <polyline points="7 23 3 19 7 15" />
+              <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+            </svg>
+            Change
+          </button>
+          <label class="tb-toggle" title="Wrap long text in tables instead of scrolling sideways">
+            <input type="checkbox" id="toolbar-wrap" />
+            <span class="stoggle-track"></span>
+            Wrap
+          </label>
+          <span class="tb-sep"></span>
           <button id="refresh-sheet-btn" class="icon-btn icon-btn-sm hidden" type="button" title="Refresh from Google">
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -556,24 +570,9 @@
               <span class="ds-status" id="ds-agent-status">Not connected</span>
             </div>
             <p class="ds-hint">
-              Your device is plugged into your PC, not into a server, so the scan is driven by a small
-              program on your machine: run <code>LocaLinter-Agent.exe</code> and leave its window open.
-              Your Anthropic API key stays there and never reaches the browser.
+              Scanning runs on this machine, against the device on your USB cable. Your Anthropic API key
+              is stored here and is never sent anywhere but Anthropic.
             </p>
-            <div class="ds-row">
-              <label for="ds-agent-url">Agent URL</label>
-              <input type="text" id="ds-agent-url" value="http://127.0.0.1:8790" spellcheck="false" />
-              <button class="btn btn-secondary sm-btn" id="ds-reconnect">Reconnect</button>
-              <button class="btn btn-ghost sm-btn hidden" id="ds-watch" aria-live="polite">Watch for agent</button>
-            </div>
-            <div class="ds-row hidden" id="ds-autostart-row">
-              <label for="ds-autostart">Start at login</label>
-              <label class="stoggle">
-                <input type="checkbox" id="ds-autostart" />
-                <span class="stoggle-track"></span>
-                <span id="ds-autostart-text">Launch the agent automatically when you sign in to Windows</span>
-              </label>
-            </div>
             <div class="ds-row">
               <label for="ds-api-key">Anthropic API key</label>
               <input type="password" id="ds-api-key" placeholder="sk-ant-…" autocomplete="off" spellcheck="false" />
@@ -616,7 +615,10 @@
               </div>
               <div class="ds-field">
                 <label for="ds-package">Android package <span class="ds-opt">(optional)</span></label>
-                <input type="text" id="ds-package" placeholder="com.studio.game" spellcheck="false" />
+                <div class="ds-pkg-row">
+                  <select id="ds-build"><option value="">Custom…</option></select>
+                  <input type="text" id="ds-package" placeholder="com.studio.game" spellcheck="false" />
+                </div>
               </div>
               <div class="ds-field">
                 <label for="ds-route">Route map <span class="ds-opt">(what earlier passes learned)</span></label>
@@ -723,8 +725,15 @@
                 <select id="ds-filter-type"><option value="all">All types</option></select>
                 <input type="text" id="ds-filter-text" class="search-query-input" placeholder="Filter findings…" />
                 <button class="btn btn-secondary sm-btn" id="ds-export">Export JSON</button>
+                <button class="btn btn-ghost sm-btn" id="ds-clear" title="Delete past runs and their screenshots">Clear history</button>
               </div>
             </div>
+            <div class="ds-explain-row">
+              <input type="text" id="ds-explain" placeholder="Paste any on-screen string to see what the scan decides about it, and why…"
+                spellcheck="false" autocomplete="off" />
+              <button class="btn btn-secondary sm-btn" id="ds-explain-btn" type="button">Check against sheet</button>
+            </div>
+            <div class="ds-explain-out hidden" id="ds-explain-out"></div>
             <div class="ds-findings" id="ds-findings"></div>
           </div>
 

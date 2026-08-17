@@ -17,11 +17,20 @@
 
   /* A four-step ramp. The old one bottomed out too dark — labels set in
      --faint were effectively invisible on --panel, so every step below
-     --text has been lifted just enough to stay legible at 11px. */
-  --text: #ecebe8;
-  --text-2: #c6c2bb;
-  --muted: #8b877f;
-  --faint: #66625b;
+     --text has been lifted just enough to stay legible at 11px. A desktop
+     window is looked at for hours at a time, so this leans brighter than the
+     web build did. */
+  --text: #f2f0ed;
+  --text-2: #cfcbc4;
+  --muted: #948f87;
+  --faint: #6e6a63;
+
+  /* Chrome the content sits inside: title bar, sidebar, status bar. */
+  --chrome: #0c0c0e;
+  --titlebar-h: 38px;
+  /* Windows paints minimise/maximise/close over the top-right of the title
+     bar, so nothing of ours may live under them. */
+  --winctl-w: 140px;
 
   --accent: #d98a3d;
   --accent-hi: #eda354;
@@ -56,15 +65,14 @@
    ============================================================ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-html { overflow-y: scroll; }
-
 body {
   font-family: var(--font);
   background: var(--bg);
   color: var(--text);
   line-height: 1.55;
   font-size: 14.5px;
-  min-height: 100vh;
+  height: 100%;
+  overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -93,20 +101,35 @@ body {
 /* ============================================================
    APP SHELL
    ============================================================ */
-.app { display: flex; align-items: flex-start; min-height: 100vh; }
+/* A window, not a page: the shell is exactly the viewport, the status bar is
+   pinned, and only the content column scrolls. `html { overflow-y: scroll }`
+   from the web build would otherwise leave a permanent second scrollbar. */
+html { overflow: hidden; height: 100%; }
+
+.app {
+  display: flex;
+  align-items: stretch;
+  height: 100vh;
+  overflow: hidden;
+}
 
 .main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .container {
   width: 100%;
-  max-width: 1240px;
-  margin: 0 auto;
-  padding: 2rem 2.25rem 6rem;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Padding tracks the window: generous when there is room, tight when the
+     user has dragged the window narrow. No centred column — the content is
+     supposed to fill the window it was given. */
+  padding: clamp(0.9rem, 1.8vw, 1.75rem) clamp(0.9rem, 2vw, 2rem) 2.5rem;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -116,9 +139,7 @@ body {
 .sidebar {
   flex: 0 0 var(--sidebar-w);
   width: var(--sidebar-w);
-  position: sticky;
-  top: 0;
-  height: 100vh;
+  height: 100%;
   background: var(--bg-2);
   border-right: 1px solid var(--border);
   display: flex;
@@ -131,11 +152,15 @@ body {
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  height: 52px;
-  padding: 0 0.9rem;
+  height: var(--titlebar-h);
+  padding: 0 0.75rem;
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
+  background: var(--chrome);
+  -webkit-app-region: drag;
+  user-select: none;
 }
+.sb-brand button { -webkit-app-region: no-drag; }
 
 /* The product logo — stacked layers with a check, carried over from the
    original site. Same mark in the sidebar, the landing page, and the
@@ -390,20 +415,24 @@ body {
 .sb-signin:hover { border-color: var(--accent-line); color: var(--text); }
 
 /* ── Topbar ── */
+/* The title bar. Everything here drags the window except the controls, and
+   the right edge is kept clear for the system's own buttons. */
 .topbar {
-  position: sticky;
-  top: 0;
   z-index: 30;
-  height: 52px;
-  flex: 0 0 52px;
+  height: var(--titlebar-h);
+  flex: 0 0 var(--titlebar-h);
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0 1.5rem 0 2.25rem;
+  padding: 0 var(--winctl-w) 0 1.25rem;
   border-bottom: 1px solid var(--border);
-  background: rgba(10, 10, 11, 0.85);
-  backdrop-filter: blur(10px);
+  background: var(--chrome);
+  -webkit-app-region: drag;
+  user-select: none;
 }
+.topbar button,
+.topbar input,
+.topbar select { -webkit-app-region: no-drag; }
 .topbar-menu { display: none; margin-left: 0; }
 
 .crumbs {
@@ -411,17 +440,76 @@ body {
   align-items: center;
   gap: 0.5rem;
   font-family: var(--mono);
-  font-size: 0.66rem;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--faint);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  color: var(--muted);
   min-width: 0;
 }
 .crumbs span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 24ch; }
 .crumb-sep { color: #2e2e34; }
-.crumb-now { color: var(--text-2); }
+.crumb-now { color: var(--muted); }
+#crumb-sheet { color: var(--text); font-weight: 500; max-width: 32ch; }
 
-.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 0.35rem; }
+.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 0.4rem; }
+
+/* ── toolbar controls ── */
+.tb-sep { width: 1px; height: 16px; background: var(--border-strong); flex: 0 0 1px; margin: 0 0.15rem; }
+
+.tb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 26px;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--text-2);
+  font-family: var(--font);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+.tb-btn:hover { background: var(--panel-3); border-color: var(--border-hover); color: var(--text); }
+.tb-btn svg { color: var(--muted); }
+.tb-btn:hover svg { color: var(--accent); }
+.tb-btn.is-open { background: var(--accent-dim); border-color: var(--accent-line); color: var(--accent-hi); }
+.tb-btn.is-open svg { color: var(--accent); }
+
+.tb-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 26px;
+  padding: 0 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.tb-toggle:hover { color: var(--text-2); }
+.tb-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.tb-toggle input:checked ~ * { color: var(--text-2); }
+
+/* Service health, back where it belongs: a dot, not a sentence. */
+.tb-agent {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.15rem;
+}
+.tb-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--faint);
+  transition: background var(--transition), box-shadow var(--transition);
+}
+.tb-agent.on .tb-dot { background: var(--success); box-shadow: 0 0 0 2.5px rgba(116, 160, 106, 0.16); }
+.tb-agent.busy .tb-dot { background: var(--accent); box-shadow: 0 0 0 2.5px var(--accent-dim); }
+.tb-agent.bad .tb-dot { background: var(--danger); box-shadow: 0 0 0 2.5px var(--danger-bg); }
 .topbar-meta {
   font-family: var(--mono);
   font-size: 0.64rem;
@@ -1620,9 +1708,22 @@ body.sb-collapsed .qt-panel { left: calc(var(--sidebar-w) + 1rem); }
 /* ============================================================
    RESPONSIVE
    ============================================================ */
-@media (max-width: 1080px) {
+/* Breakpoints are window widths now, not screen widths, and the window can
+   legitimately be dragged down to 860. Everything below has to survive the
+   ~600px of content left once the sidebar takes its share. */
+@media (max-width: 1180px) {
   .src-grid { grid-template-columns: 1fr; }
-  .src-drop { border-right: none; border-bottom: 1px solid var(--border); padding: 2rem 1.5rem; }
+  .src-drop { border-right: none; border-bottom: 1px solid var(--border); padding: 1.5rem 1.25rem; }
+  .stat-pill { min-width: 120px; flex: 1 1 auto; }
+}
+
+@media (max-width: 1000px) {
+  :root { --sidebar-w: 208px; }
+  .page-title { font-size: 1.7rem; }
+  .results-header { flex-direction: column; align-items: stretch; gap: 0.75rem; }
+  .search-opt-group { gap: 0.5rem; }
+  .search-opt-toggles { margin-left: 0 !important; }
+  .table-wrapper, #searchTableWrap { max-height: none; }
 }
 
 @media (max-width: 860px) {

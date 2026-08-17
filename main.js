@@ -329,7 +329,7 @@ window.addEventListener('DOMContentLoaded', () => {
     // Device Scan tab lets you pick one rather than inheriting whatever
     // happens to be open.
     getPresets() {
-      return Object.entries(SHEET_PRESETS).map(([key, p]) => ({ key, label: p.label, id: p.id }));
+      return Object.entries(SHEET_PRESETS).map(([key, p]) => ({ key, label: p.label, id: p.id, pkg: p.pkg }));
     },
     getCurrentPresetKey() {
       return presetKeyForSpreadsheetId(currentSheetRef && currentSheetRef.spreadsheetId);
@@ -500,9 +500,49 @@ window.addEventListener('DOMContentLoaded', () => {
     return `Only @${list} accounts can use LocaLinter. Sign in with your work account.`;
   }
 
-  function revokeToken(accessToken) {
-    if (!accessToken) return;
-    try { google.accounts.oauth2.revoke(accessToken, () => {}); } catch { /* best effort */ }
+  /* ── sign-in, via the agent ───────────────────────────────────────────────
+     The desktop build has no Google Identity Services: a bundled app is not a
+     browser origin. The agent runs the installed-app flow instead — system
+     browser, loopback redirect, PKCE — and holds the refresh token. The UI
+     only ever asks it for an access token that is already valid. */
+
+  const AUTH_POLL_MS = 1500;
+  const AUTH_TIMEOUT_MS = 3 * 60 * 1000;   // long enough to pick an account and consent
+
+  async function agentAuth(path, options) {
+    const res = await fetch(`/api/auth/${path}`, {
+      headers: { 'content-type': 'application/json' },
+      ...options,
+    });
+    return { ok: res.ok, status: res.status, body: await res.json().catch(() => ({})) };
+  }
+
+  function revokeToken() {
+    // The agent owns the grant, so revoking is its job; nothing to send it.
+    agentAuth('signout', { method: 'POST' }).catch(() => {});
+  }
+
+  /** Pull the current session out of the agent and mirror it into local UI state. */
+  async function syncAuthFromAgent() {
+    let r;
+    try {
+      r = await agentAuth('token');
+    } catch {
+      return null;   // agent not up yet; the caller decides what that means
+    }
+    if (!r.ok) {
+      if (r.status === 401) clearToken();
+      return null;
+    }
+    const tok = { access_token: r.body.access_token, expires_at: r.body.expires_at };
+    if (r.body.user && !isAllowedUser(r.body.user)) {
+      revokeToken();
+      clearToken({ forget: true });
+      throw new Error(domainRejectionMessage());
+    }
+    storeToken(tok);
+    if (r.body.user) storeUser(r.body.user);
+    return tok;
   }
 
   function loadStoredToken() {
@@ -631,72 +671,57 @@ window.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  function requestAccessToken({ silent = false } = {}) {
-    return new Promise((resolve, reject) => {
-      const clientId = getOAuthClientId();
-      if (!clientId) {
-        reject(new Error('Google OAuth Client ID is not configured. Set the meta tag in index.html.'));
-        return;
-      }
-      if (!window.google || !google.accounts || !google.accounts.oauth2) {
-        reject(new Error('Google Identity Services not loaded yet. Try again in a moment.'));
-        return;
-      }
-      // Any token request can end up opening a Google window when it cannot
-      // be served from an existing session. Until the user has interacted
-      // with the page, refuse — otherwise a background refresh (the sheet
-      // reload on startup, say) pops a window nobody asked for.
-      if (navigator.userActivation && !navigator.userActivation.hasBeenActive) {
-        reject(new Error('Sign in to continue.'));
-        return;
-      }
-      const allowed = getAllowedDomains();
-      // An empty prompt lets Google skip the consent screen for anyone who has
-      // already granted these scopes; it only asks when it genuinely needs to.
-      const prompt = silent || hasPriorGrant() ? '' : 'consent';
-      const tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: SHEETS_SCOPE,
-        prompt,
-        // Nudges the account chooser toward the work domain; the real check
-        // happens below, since `hd` is only a hint and can be overridden.
-        ...(allowed.length === 1 ? { hd: allowed[0] } : {}),
-        callback: async (response) => {
-          if (response.error) {
-            reject(new Error(response.error_description || response.error));
-            return;
-          }
-          const tok = {
-            access_token: response.access_token,
-            expires_at: Date.now() + (Number(response.expires_in || 3600) - 60) * 1000,
-          };
-          let user;
-          try {
-            user = await fetchUserInfo(tok.access_token);
-          } catch {
-            // Without a profile the domain can't be verified, so refuse.
-            revokeToken(tok.access_token);
-            clearToken();
-            updateAuthUI();
-            reject(new Error('Could not verify your Google account. Try again.'));
-            return;
-          }
-          if (!isAllowedUser(user)) {
-            revokeToken(tok.access_token);
-            clearToken();
-            updateAuthUI();
-            reject(new Error(domainRejectionMessage()));
-            return;
-          }
-          storeToken(tok);
-          storeUser(user);
-          updateAuthUI();
-          resolve(tok);
-        },
-        error_callback: (err) => reject(new Error(err && err.message ? err.message : 'Sign-in cancelled')),
-      });
-      tokenClient.requestAccessToken({ prompt });
+  /**
+   * Opens the system browser and waits for the agent to report a session.
+   * `silent` means "use what is already there" — the agent renews with its
+   * refresh token and never shows UI, so unlike the web build this is safe to
+   * call on startup without a user gesture.
+   */
+  async function requestAccessToken({ silent = false } = {}) {
+    const existing = await syncAuthFromAgent();
+    if (existing || silent) {
+      if (!existing && silent) return null;
+      updateAuthUI();
+      return existing;
+    }
+
+    // Opening the browser is a visible, interrupting act, so it must be
+    // something the user asked for. Any background path that needs a token —
+    // the sheet auto-refresh on startup, most of all — has to fail quietly and
+    // let the gate ask instead. The web build guarded this the same way.
+    if (navigator.userActivation && !navigator.userActivation.hasBeenActive) {
+      throw new Error('Sign in to continue.');
+    }
+
+    const allowed = getAllowedDomains();
+    const started = await agentAuth('start', {
+      method: 'POST',
+      body: JSON.stringify({ hint: allowed.length === 1 ? allowed[0] : '' }),
     });
+    if (!started.ok) throw new Error(started.body.error || 'Could not start sign-in.');
+
+    setGateStatus('Finishing sign-in in your browser…');
+    const deadline = Date.now() + AUTH_TIMEOUT_MS;
+    for (;;) {
+      await new Promise((r) => setTimeout(r, AUTH_POLL_MS));
+
+      const tok = await syncAuthFromAgent();
+      if (tok) {
+        updateAuthUI();
+        return tok;
+      }
+
+      // Google redirects the *browser*, not this window, so a cancelled sign-in
+      // would otherwise be indistinguishable from a slow one — the agent
+      // records how the attempt ended and we stop as soon as it knows.
+      const state = await agentAuth('session');
+      const f = state.ok ? state.body.flow : null;
+      if (f && (f.status === 'cancelled' || f.status === 'error')) {
+        throw new Error(f.message || 'Sign-in did not complete.');
+      }
+
+      if (Date.now() > deadline) throw new Error('Sign-in timed out. Try again.');
+    }
   }
 
   // Google's access tokens last about an hour, and the browser-side flow has
@@ -705,10 +730,12 @@ window.addEventListener('DOMContentLoaded', () => {
   // the gate. A renewal fired on page load looks identical to Google, but
   // when it cannot complete without UI it opens a window nobody asked for,
   // which is worse than the sign-in it was trying to avoid.
+  // No prior-grant guard any more: the agent holds a refresh token, so a
+  // renewal is a background HTTP call that can never surprise anyone with a
+  // popup. That was the whole reason the web build had to be so careful here.
   async function renewSilently() {
-    if (!hasPriorGrant()) return null;
     try {
-      return await requestAccessToken({ silent: true });
+      return await syncAuthFromAgent();
     } catch {
       return null;
     }
@@ -955,11 +982,14 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // ── Sheet presets (Dev / Staging / Global Prod / Latam Prod) ──
   const SHEET_PRESETS = {
-    dev:     { id: '1yyDiN-QlqXXNzFKVSA1NOINMBQyEex-0VYcnRwzZKzY', label: 'Dev' },
-    staging: { id: '17lZ5oMqMuCxX6dig--YvsmAM-MuP3w_nBtDgu3_z45A', label: 'Staging' },
-    prod:    { id: '1ucDqgNFb74WZCYbTVQSoUW2cTfBDZodR5ypSfC-fBBQ', label: 'Global Prod' },
-    latam:   { id: '1NdRYDmh-BxuQbfgaoeLeLcfSDalvISzOpbRxKkH1kPI', label: 'Latam Prod' },
-    mena:    { id: '1XBJIQ9D1qbugTB3C8yk4KSTMjeuIiI4vsHQ1krCzghA', label: 'Mena Prod' },
+    // Each environment is a sheet *and* the build it belongs to. Keeping the
+    // package here means picking an environment points the device scan at the
+    // right APK too, instead of leaving it to be typed correctly every time.
+    dev:     { id: '1yyDiN-QlqXXNzFKVSA1NOINMBQyEex-0VYcnRwzZKzY', label: 'Dev',         pkg: 'com.indusgame.dev' },
+    staging: { id: '17lZ5oMqMuCxX6dig--YvsmAM-MuP3w_nBtDgu3_z45A', label: 'Staging',     pkg: 'com.indusgame.staging' },
+    prod:    { id: '1ucDqgNFb74WZCYbTVQSoUW2cTfBDZodR5ypSfC-fBBQ', label: 'Global Prod', pkg: 'com.indusgame.play' },
+    latam:   { id: '1NdRYDmh-BxuQbfgaoeLeLcfSDalvISzOpbRxKkH1kPI', label: 'Latam Prod',  pkg: 'gg.primerush.play' },
+    mena:    { id: '1XBJIQ9D1qbugTB3C8yk4KSTMjeuIiI4vsHQ1krCzghA', label: 'Mena Prod',   pkg: 'com.playhera.primerush' },
   };
 
   function presetKeyForSpreadsheetId(id) {
@@ -1162,33 +1192,40 @@ window.addEventListener('DOMContentLoaded', () => {
   updateAuthUI();
 
   (async function prepareGate() {
-    if (!getOAuthClientId()) {
-      setGateStatus('Google OAuth Client ID is not configured.', true);
-      gateSignInBtn.disabled = true;
-      return;
-    }
-
-    if (loadStoredToken()) return;
-
+    // The agent is the source of truth now, and it can renew from a refresh
+    // token with no UI — so a returning user is simply signed in, rather than
+    // being shown a gate and asked to click through one they already passed.
     gateSignInBtn.disabled = true;
-    setGateStatus('Loading Google sign-in…');
-    for (let i = 0; i < 50 && !(window.google && google.accounts && google.accounts.oauth2); i++) {
-      await new Promise(r => setTimeout(r, 100));
+    setGateStatus('Checking your session…');
+
+    let status;
+    try {
+      status = await agentAuth('session');
+    } catch {
+      setGateStatus('Could not reach the local service. Restart LocaLinter.', true);
+      return;
     }
-    if (!(window.google && google.accounts && google.accounts.oauth2)) {
-      setGateStatus('Could not reach Google sign-in. Check your connection and reload.', true);
+    if (!status.ok || !status.body.configured) {
+      setGateStatus('Google sign-in is not configured — google-client.json is missing.', true);
       return;
     }
 
-    // Someone whose hour-old token lapsed has already consented, so the click
-    // ahead costs them one press and no consent screen. Name them, so the
-    // gate reads as resuming rather than starting over.
-    const returning = hasPriorGrant() ? loadStoredUser() : null;
+    try {
+      if (await syncAuthFromAgent()) {
+        updateAuthUI();
+        return;                       // already signed in; the gate never shows
+      }
+    } catch (e) {
+      setGateStatus(e.message, true); // wrong domain — say so and stop
+      return;
+    }
+
+    const returning = status.body.session && status.body.session.user;
     if (returning && returning.email) {
       gateSignInBtn.querySelector('span').textContent = `Continue as ${returning.email}`;
-      setGateStatus('Your session timed out. One click puts you back — no consent screen.');
+      setGateStatus('Your session expired. One click puts you back.');
     } else {
-      setGateStatus('You stay signed in on this browser until you sign out.');
+      setGateStatus('Sign-in opens in your browser, then come back here.');
     }
     gateSignInBtn.disabled = false;
   })();
@@ -2166,6 +2203,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function setWrap(enabled) {
     if (globalWrapChk) globalWrapChk.checked = enabled;
+    const tbWrap = document.getElementById('toolbar-wrap');
+    if (tbWrap) tbWrap.checked = enabled;
     if (sWrapChk) sWrapChk.checked = enabled;
     [formatTableWrap, missingTableWrap, searchTableWrap].forEach(el => {
       if (el) el.classList.toggle('wrap-text', enabled);
@@ -2173,6 +2212,10 @@ window.addEventListener('DOMContentLoaded', () => {
     localStorage.setItem('locaLinterGlobalWrap', enabled);
   }
 
+  // Wrap is reachable from the toolbar as well as the filter row; both are the
+  // same setting, so each has to follow the other.
+  const toolbarWrapChk = document.getElementById('toolbar-wrap');
+  if (toolbarWrapChk) toolbarWrapChk.addEventListener('change', () => setWrap(toolbarWrapChk.checked));
   if (globalWrapChk) globalWrapChk.addEventListener('change', () => setWrap(globalWrapChk.checked));
   if (sWrapChk) sWrapChk.addEventListener('change', () => setWrap(sWrapChk.checked));
 

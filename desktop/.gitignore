@@ -1,0 +1,3 @@
+node_modules/
+# electron-builder output: an installer and its intermediates.
+dist/
