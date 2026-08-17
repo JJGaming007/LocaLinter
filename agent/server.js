@@ -24,6 +24,7 @@ const store = require('./lib/store');
 const routeMaps = require('./lib/routes');
 const paths = require('./lib/paths');
 const tools = require('./lib/tools');
+const autostart = require('./lib/autostart');
 
 const PORT = Number(process.env.PORT || 8790);
 const HOST = '127.0.0.1';
@@ -35,6 +36,12 @@ function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'content-type');
+  // LocaLinter is served over https while this agent listens on loopback, so
+  // Chrome treats every call as a public-to-private request and blocks it
+  // unless the preflight is answered with this. Without it the browser only
+  // reports a failed fetch, which reads as "the agent is not running" even
+  // though it is up and answering curl.
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
 }
 
 function json(res, status, body) {
@@ -123,6 +130,15 @@ const routes = {
   'GET /api/tools/adb': async () => {
     const found = await tools.resolveAdb(config.load());
     return found ? { found: true, ...found } : { found: false, downloadFrom: tools.ZIP_URL };
+  },
+
+  // Start-at-login. The browser cannot launch this process, so the next best
+  // thing is letting the tester ask the OS to do it for them, once.
+  'GET /api/autostart': async () => autostart.status(),
+
+  'POST /api/autostart': async (req) => {
+    const body = await readBody(req);
+    return body.enable === false ? autostart.disable() : autostart.enable();
   },
 
   // Explicitly triggered from the browser: fetch Google's platform-tools and
@@ -478,14 +494,47 @@ const server = http.createServer(async (req, res) => {
 paths.ensure();
 paths.seedRoutes();
 
-server.listen(PORT, HOST, async () => {
-  const cfg = config.load();
-  console.log(`LocaLinter agent ${VERSION} listening on http://${HOST}:${PORT}`);
-  console.log(`  data:     ${paths.DATA_DIR}`);
-  const adb = await tools.resolveAdb(cfg);
-  console.log(`  adb:      ${adb ? `${adb.path} (${adb.source})` : 'NOT FOUND — the Device Scan tab can fetch it'}`);
-  console.log(`  model:    ${cfg.model}`);
-  console.log(`  API key:  ${cfg.apiKey ? 'configured' : 'NOT SET — add it in the Device Scan tab'}`);
-  console.log(`  bridge:   127.0.0.1:${cfg.bridgePort}`);
-  console.log('Open LocaLinter in your browser and switch to the Device Scan tab.');
-});
+/**
+ * Registering start-at-login is also useful without a browser — a tester who
+ * has just downloaded the exe can run it once with a flag and be done, and it
+ * gives IT something scriptable to push out.
+ */
+async function runCli(flag) {
+  try {
+    if (flag === '--install-autostart') {
+      const s = await autostart.enable();
+      console.log(`Start at login: ENABLED\n  ${s.command}`);
+    } else if (flag === '--uninstall-autostart') {
+      await autostart.disable();
+      console.log('Start at login: DISABLED');
+    } else {
+      const s = await autostart.status();
+      console.log(`Start at login: ${s.enabled ? 'ENABLED' : 'disabled'}`);
+      if (s.enabled) console.log(`  ${s.command}`);
+      if (s.stale) console.log(`  STALE — points somewhere else. Re-run --install-autostart.`);
+    }
+    process.exit(0);
+  } catch (e) {
+    console.error(`Failed: ${e.message}`);
+    process.exit(1);
+  }
+}
+
+const cliFlag = process.argv.find((a) => /^--(install|uninstall)-autostart$|^--autostart-status$/.test(a));
+if (cliFlag) {
+  runCli(cliFlag);
+} else {
+  server.listen(PORT, HOST, async () => {
+    const cfg = config.load();
+    console.log(`LocaLinter agent ${VERSION} listening on http://${HOST}:${PORT}`);
+    console.log(`  data:     ${paths.DATA_DIR}`);
+    const adb = await tools.resolveAdb(cfg);
+    console.log(`  adb:      ${adb ? `${adb.path} (${adb.source})` : 'NOT FOUND — the Device Scan tab can fetch it'}`);
+    console.log(`  model:    ${cfg.model}`);
+    console.log(`  API key:  ${cfg.apiKey ? 'configured' : 'NOT SET — add it in the Device Scan tab'}`);
+    console.log(`  bridge:   127.0.0.1:${cfg.bridgePort}`);
+    const auto = await autostart.status();
+    console.log(`  autostart: ${auto.enabled ? (auto.stale ? 'enabled (STALE — re-enable it)' : 'enabled') : 'off'}`);
+    console.log('Open LocaLinter in your browser and switch to the Device Scan tab.');
+  });
+}

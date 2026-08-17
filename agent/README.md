@@ -144,12 +144,10 @@ screenshot beside them, and can be exported as JSON. Every run also writes
 
 ## What a scan costs
 
-Each run reports `usage` — input, output, and cached tokens, the number of API
-calls, and `costUSD`, which is those token counts priced at the published rate
-for the model you ran. It is a measurement, not an estimate. The figure updates
-while the scan is running and feeds the spend readout in the sidebar. If you run
-a model with no published rate in `lib/claude.js`, the run reports tokens and
-sets `priced: false` rather than guessing a price.
+Each run reports `usage` — input, output, and cached tokens, and the number of
+API calls — in `report.json` and in the run log. It is a measurement, not an
+estimate. The app itself no longer tracks or displays a running spend figure;
+read the token counts against your own Anthropic billing if you need dollars.
 
 Safety classifiers occasionally decline a screenshot. Rather than losing that
 screen, the agent asks the API to fall back to another model for the declined

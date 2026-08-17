@@ -24,14 +24,14 @@
   let source = null;           // EventSource
   let issues = [];
   let screens = new Map();
-  let usageSent = null;          // cumulative usage already forwarded for this run
   let running = false;
 
   document.addEventListener('DOMContentLoaded', init);
 
   function init() {
     [
-      'ds-agent-url', 'ds-reconnect', 'ds-agent-status', 'ds-api-key', 'ds-save-key', 'ds-key-state',
+      'ds-agent-url', 'ds-reconnect', 'ds-watch', 'ds-agent-status', 'ds-api-key', 'ds-save-key', 'ds-key-state',
+      'ds-autostart-row', 'ds-autostart', 'ds-autostart-text',
       'ds-adb-row', 'ds-adb-state', 'ds-get-adb',
       'ds-mode', 'ds-device', 'ds-sheet', 'ds-language', 'ds-package', 'ds-route', 'ds-route-card', 'ds-probe', 'ds-start', 'ds-stop',
       'ds-advanced-toggle', 'ds-advanced', 'ds-probe-out', 'ds-agent-out', 'ds-target-status',
@@ -49,9 +49,16 @@
     if (saved) el.dsAgentUrl.value = saved;
 
     el.dsReconnect.addEventListener('click', connectAndLoadRoutes);
+    el.dsWatch.addEventListener('click', () => (watching() ? stopWatching() : startWatching()));
+    el.dsAutostart.addEventListener('change', toggleAutostart);
     el.dsSaveKey.addEventListener('click', saveKey);
     el.dsGetAdb.addEventListener('click', downloadAdb);
-    el.dsAdvancedToggle.addEventListener('click', () => el.dsAdvanced.classList.toggle('hidden'));
+    el.dsAdvancedToggle.addEventListener('click', () => {
+      const open = !el.dsAdvanced.classList.toggle('hidden');
+      // A toggle that looks identical open and shut tells you nothing.
+      el.dsAdvancedToggle.classList.toggle('is-open', open);
+      el.dsAdvancedToggle.setAttribute('aria-expanded', String(open));
+    });
     el.dsMode.addEventListener('change', onModeChange);
     el.dsProbe.addEventListener('click', probe);
     el.dsStart.addEventListener('click', start);
@@ -124,8 +131,59 @@
       : 'Run <code>LocaLinter-Agent.exe</code>';
     el.dsAgentOut.innerHTML =
       `<div class="ds-msg bad">${escapeHtml(headline)}<br>` +
-      `${get}, then press Reconnect. Leave its window open while you scan.<br>` +
+      `${get}. This tab is watching for it and will connect on its own — no need to come back here.<br>` +
       `Working from a source checkout? <code>npm start</code> in <code>agent/</code>.</div>`;
+    startWatching();
+  }
+
+  /* ── watching for the agent ───────────────────────────────────────────────
+     A page cannot launch a local process, so the next best thing is to stop
+     making the tester come back and press Reconnect: once the agent is missing
+     we poll quietly in the background and connect the moment it answers. The
+     button is a manual override for anyone who would rather not wait. */
+
+  let watchTimer = null;
+  const WATCH_MS = 2000;
+
+  function watching() {
+    return watchTimer !== null;
+  }
+
+  function startWatching() {
+    if (watching() || agentOk) return;
+    el.dsWatch.classList.remove('hidden');
+    el.dsWatch.classList.add('is-open');
+    el.dsWatch.textContent = 'Watching for agent…';
+
+    const tick = async () => {
+      if (agentOk) return stopWatching();
+      // A backgrounded tab has nobody watching it; wait until it is looked at
+      // again rather than polling all night.
+      if (document.hidden) {
+        watchTimer = setTimeout(tick, WATCH_MS);
+        return;
+      }
+      try {
+        // Deliberately not api(): a failure here is expected and must not
+        // repaint the panel or recurse back into showAgentError().
+        const res = await fetch(`${agentUrl()}/api/health`, { headers: { 'content-type': 'application/json' } });
+        if (res.ok) {
+          stopWatching();
+          await connectAndLoadRoutes();
+          return;
+        }
+      } catch { /* still not there; keep waiting */ }
+      watchTimer = setTimeout(tick, WATCH_MS);
+    };
+    watchTimer = setTimeout(tick, WATCH_MS);
+  }
+
+  function stopWatching() {
+    if (watchTimer) clearTimeout(watchTimer);
+    watchTimer = null;
+    el.dsWatch.classList.remove('is-open');
+    el.dsWatch.textContent = 'Watch for agent';
+    if (agentOk) el.dsWatch.classList.add('hidden');
   }
 
   async function connect() {
@@ -136,10 +194,12 @@
     try {
       const health = await api('/api/health');
       agentOk = true;
+      stopWatching();
       setStatus(el.dsAgentStatus, `Connected · v${health.version} · node ${health.node}`, 'ok');
       const { config } = await api('/api/config');
       agentConfig = config;
       applyConfig(config);
+      await refreshAutostart();
       await refreshAdb();
       await refreshDevices();
       refreshLanguages();
@@ -151,6 +211,45 @@
       // (a bad response, a wrong URL that resolves) needs its own line.
       if (!el.dsAgentOut.innerHTML) showAgentError(`Could not reach the agent at ${agentUrl()}: ${e.message}`);
       updateStartState();
+    }
+  }
+
+  /**
+   * Start-at-login is the actual answer to "why isn't it connected" — an agent
+   * the OS launches is one nobody has to remember. Only offered where the agent
+   * can implement it, so the row stays hidden on anything but Windows.
+   */
+  async function refreshAutostart() {
+    try {
+      const s = await api('/api/autostart');
+      if (!s.supported) {
+        el.dsAutostartRow.classList.add('hidden');
+        return;
+      }
+      el.dsAutostartRow.classList.remove('hidden');
+      el.dsAutostart.checked = !!s.enabled && !s.stale;
+      el.dsAutostartText.textContent = s.stale
+        ? 'The saved entry points somewhere else — switch this off and on to repoint it'
+        : s.enabled
+          ? 'The agent starts with Windows'
+          : 'Launch the agent automatically when you sign in to Windows';
+    } catch {
+      el.dsAutostartRow.classList.add('hidden');
+    }
+  }
+
+  async function toggleAutostart() {
+    const enable = el.dsAutostart.checked;
+    el.dsAutostart.disabled = true;
+    try {
+      await api('/api/autostart', { method: 'POST', body: JSON.stringify({ enable }) });
+      log(enable ? 'The agent will now start when you sign in to Windows.' : 'The agent will no longer start automatically.', 'info');
+    } catch (e) {
+      el.dsAutostart.checked = !enable;   // the OS refused; do not lie about it
+      log(`Could not change start-at-login: ${e.message}`, 'error');
+    } finally {
+      el.dsAutostart.disabled = false;
+      await refreshAutostart();
     }
   }
 
@@ -504,7 +603,6 @@
 
     issues = [];
     screens = new Map();
-    usageSent = null;
     el.dsFindings.innerHTML = '';
     el.dsLog.innerHTML = '';
     el.dsSummary.classList.add('hidden');
@@ -616,26 +714,14 @@
   }
 
   /**
-   * The agent reports usage as a running total, so forward the difference since
-   * the last report. The budget meter can then add up deltas without ever
-   * counting the same tokens twice.
+   * The issues tile was marked danger in the markup, so it sat red through an
+   * entire clean scan. Colour it from the count instead: neutral until the
+   * scan has run, green at zero, red once something is actually wrong.
    */
-  function reportUsage(usage, { final = false } = {}) {
-    if (!usage) return;
-    const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0, costUSD: 0 };
-    const prev = usageSent || zero;
-    const delta = {};
-    let changed = false;
-    for (const k of Object.keys(zero)) {
-      delta[k] = (usage[k] || 0) - (prev[k] || 0);
-      if (delta[k] > 0) changed = true;
-    }
-    usageSent = { ...zero, ...usage };
-    if (!changed && !final) return;
-    delta.priced = usage.priced !== false;
-    delta.model = el.dsModel ? el.dsModel.value : '';
-    delta.runFinished = final;
-    document.dispatchEvent(new CustomEvent('localinter:usage', { detail: delta }));
+  function setIssueStat(count) {
+    el.dsStatIssues.textContent = `Issues: ${count}`;
+    const tile = el.dsStatIssues.closest('.stat-pill');
+    if (tile) tile.className = `stat-pill ${count > 0 ? 'danger' : 'success'}`;
   }
 
   function handleEvent(ev) {
@@ -649,9 +735,8 @@
       case 'progress':
         el.dsStatScreens.textContent = `Screens: ${ev.screens}`;
         el.dsStatActions.textContent = `Actions: ${ev.actions}`;
-        el.dsStatIssues.textContent = `Issues: ${ev.issues}`;
+        setIssueStat(ev.issues);
         el.dsStatQueue.textContent = `Queued: ${ev.queued}`;
-        reportUsage(ev.usage);
         break;
       case 'action':
         setStatus(el.dsRunStatus, `Tapping “${truncate(ev.action.label, 40)}”`, 'pending');
@@ -662,8 +747,8 @@
         break;
       case 'issues':
         issues.push(...ev.issues);
-        el.badgeDevice.textContent = String(issues.length);
-        el.dsStatIssues.textContent = `Issues: ${issues.length}`;
+        (window.locaLinterSetBadge || (() => {}))(el.badgeDevice, issues.length);
+        setIssueStat(issues.length);
         renderFindings();
         break;
       case 'done':
@@ -700,11 +785,9 @@
       }
       if (report.usage) {
         const u = report.usage;
-        const cost = u.priced === false ? '' : ` ≈ $${(u.costUSD || 0).toFixed(4)}`;
-        log(`Claude usage: ${u.calls} calls, ${u.input} in / ${u.output} out tokens (${u.cacheRead} cached)${cost}.`, 'info');
-        reportUsage(u, { final: true });
+        log(`Claude usage: ${u.calls} calls, ${u.input} in / ${u.output} out tokens (${u.cacheRead} cached).`, 'info');
       }
-      el.badgeDevice.textContent = String(issues.length);
+      (window.locaLinterSetBadge || (() => {}))(el.badgeDevice, issues.length);
       renderFindings();
     } catch (e) {
       log(`Could not load the final report: ${e.message}`, 'warn');

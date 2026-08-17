@@ -187,7 +187,16 @@
   font-size: 0.72rem;
   color: var(--text-2);
 }
-.ds-stats .stat-pill.danger { color: var(--danger); border-color: var(--danger-border); }
+.ds-stats .stat-pill.danger {
+  color: var(--danger);
+  border-color: var(--danger-border);
+  border-left-color: var(--danger);
+}
+.ds-stats .stat-pill.success {
+  color: var(--success);
+  border-color: rgba(116, 160, 106, 0.32);
+  border-left-color: var(--success);
+}
 
 .ds-summary {
   font-size: 0.82rem;
