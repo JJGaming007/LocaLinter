@@ -4,6 +4,7 @@ const { runChecks } = require('./checks');
 const { perceptualHash, hammingDistance, size: pngSize } = require('./png');
 const { norm } = require('./sheet');
 const memory = require('./memory');
+const baseline = require('./baseline');
 
 // Findings that are a claim about *which language* a string is in. These are
 // the ones the sheet can settle; a truncation or an overlap it cannot.
@@ -59,7 +60,18 @@ class Crawler {
     this.blocked = safeRegexes(cfg.blockedLabels);
     this.probe = safeRegexes(cfg.probeLabels);
 
+    // An overflow is only reportable as a pair: the same screen in the source
+    // language and in the target. A run covers one language, so the source
+    // pass writes its screens to disk and every later pass reads them back.
+    this.routeName = (route && route.app && route.app.name) || (target && target.routeName) || '';
+    this.sourceLanguage = (target && target.sourceHeader) || '';
+    this.capturingBaseline = !!(this.sourceLanguage && target
+      && String(target.header).trim().toLowerCase() === String(this.sourceLanguage).trim().toLowerCase());
+    this.baselineEnabled = !!(this.routeName && this.sourceLanguage && cfg.englishBaseline !== false);
+
     this.visited = new Map();          // sig -> screenId
+    this.autoDismissScreens = new Set(); // screens the route says to close, not explore
+    this.clearingModals = false;       // guards the dismissal's own settles
     this.hashes = [];                  // [{ hash, sig }] for near-duplicate detection
     this.triedLabels = new Map();      // screenId -> labels already acted on (vision mode)
     this.stack = [];                   // pending { action, parent }
@@ -141,6 +153,16 @@ class Crawler {
 
   /** Waits until the UI stops changing, so we never analyse a mid-transition frame. */
   async settle() {
+    const cap = await this.settleOnly();
+    // A modal the route map says to dismiss on sight is not a screen to
+    // explore — it is something standing between us and the screen we asked
+    // for, and every coordinate underneath it is wrong while it is up.
+    const cleared = await this.clearAutoDismissModals(cap);
+    return cleared || cap;
+  }
+
+  /** The raw settle, with no modal handling — used by the dismissal itself. */
+  async settleOnly() {
     const deadline = Date.now() + this.cfg.settleTimeoutMs;
     await sleep(this.cfg.settleMs);
     let prev = await this.capture();
@@ -153,6 +175,84 @@ class Crawler {
       prev = next;
     }
     return prev;
+  }
+
+  /**
+   * Close the modals the route map marks `autoDismiss`, using their own close
+   * control rather than the back key.
+   *
+   * Two things made this necessary, both hit by hand while recording Indus.
+   * A daily-reward modal appears over the lobby after launch *and after every
+   * language change*, and it swallowed three separate navigation sequences:
+   * the taps landed on the modal, the crawl believed it had reached Settings,
+   * and the screenshots that followed were of the wrong screen — captured,
+   * analysed and reported with complete confidence. And the obvious way to
+   * clear such a thing, pressing back, is the one thing that must not happen
+   * here: back on the lobby opens the exit-game confirmation, whose yes button
+   * quits the app and ends the run.
+   *
+   * So the route map names the control that closes each modal, and this taps
+   * exactly that.
+   */
+  async clearAutoDismissModals(cap, max = 3) {
+    if (!this.route || this.clearingModals) return null;
+    this.clearingModals = true;
+    try {
+      let current = cap;
+      let cleared = null;
+      for (let i = 0; i < max; i++) {
+        const texts = this.textsOf(current);
+        const known = this.identifyRouteScreen(texts);
+        const auto = known && known.def && known.def.autoDismiss;
+        if (!auto || !auto.tap) break;
+
+        const point = this.resolveRef(auto.tap);
+        if (!point) {
+          this.run.log(`${known.name} should be dismissed but "${auto.tap}" does not resolve — leaving it up.`, 'warn');
+          break;
+        }
+        this.run.log(`${known.name} is covering the screen — closing it with ${auto.tap}.`);
+        try {
+          await this.tapAt(point.x, point.y);
+        } catch (e) {
+          this.run.log(`Could not close ${known.name}: ${e.message}`, 'warn');
+          break;
+        }
+        current = await this.settleOnly();
+        cleared = current;
+      }
+      return cleared;
+    } finally {
+      this.clearingModals = false;
+    }
+  }
+
+  /**
+   * Does this route map say the back key is unsafe here?
+   *
+   * Indus answers yes: back on the lobby opens a confirmation whose yes button
+   * quits the game. Rather than hard-code that, any hazard whose text says so
+   * is enough to stop the generic back-until-it-goes-away routine.
+   */
+  hazardWarnsAgainstBack() {
+    const hazards = (this.route && this.route.hazards) || {};
+    return Object.entries(hazards).some(([name, text]) =>
+      /back/i.test(`${name} ${text}`) && /unsafe|exit|quit|kills the app|ends the run/i.test(String(text)));
+  }
+
+  /** Every string we can see on a capture, from the bridge or from memory. */
+  textsOf(cap) {
+    if (cap && cap.state && Array.isArray(cap.state.texts)) {
+      return cap.state.texts
+        .filter((t) => t.active !== false && String(t.text || '').trim())
+        .map((t) => t.text);
+    }
+    // Vision mode has no strings until the analyser has looked at the screen.
+    // The signature is all we have, so fall back to whatever this exact screen
+    // said last time we were here.
+    const sig = cap ? this.signature(cap) : null;
+    const id = sig ? this.visited.get(sig) : null;
+    return (id && this.observedText.get(id)) || [];
   }
 
   // ── actions ────────────────────────────────────────────────────────────
@@ -170,6 +270,14 @@ class Crawler {
 
   /** Enumerates the actions available on the current screen. */
   async actionsFor(cap, screenId) {
+    // A dismiss-on-sight modal has no controls worth queueing: exploring it
+    // means tapping CLAIM, or the exit-game dialog's yes button. Close it and
+    // let the crawl carry on with whatever it was covering.
+    if (this.autoDismissScreens.has(screenId)) {
+      await this.clearAutoDismissModals(cap);
+      return [];
+    }
+
     const actions = [];
 
     if (cap.state && Array.isArray(cap.state.interactables)) {
@@ -551,38 +659,193 @@ class Crawler {
     return true;
   }
 
-  /** Put the game into the language the sheet column is being checked against. */
+  /**
+   * Put the game into the language the sheet column is being checked against.
+   *
+   * The picker used to be a handful of fixed coordinates. It is not: it is a
+   * scrolling list of nineteen entries, so a language has to be found by
+   * reading the screen. Three things about it were learned the hard way and
+   * are all handled below — the list keeps gliding after a swipe, it re-anchors
+   * itself to the currently selected entry a couple of seconds later, and the
+   * app goes on rendering parts of its UI in the language it launched with
+   * until it is restarted.
+   */
   async applyRouteLanguage() {
     const proc = this.route && this.route.procedures && this.route.procedures.setLanguage;
     if (!proc || !this.adb) return false;
 
-    const picker = this.routeScreens['settings.languagePicker'];
-    const wanted = String(this.target.header || '').trim().toLowerCase();
-    const control = picker && Object.keys(picker.controls || {})
-      .find((k) => k.toLowerCase() === wanted || wanted.startsWith(k.toLowerCase()));
-    if (!control) {
-      this.run.log(`Route map has no language option matching "${this.target.header}" — leaving the game's language alone.`, 'warn');
-      return false;
-    }
+    const wanted = this.pickerEntryFor(this.target.header);
+    if (!wanted) return false;
 
-    this.run.log(`Setting the game's language to ${this.target.header} using the route map.`);
+    this.run.log(`Setting the game's language to ${wanted} using the route map.`);
     for (const step of proc.steps || []) {
       if (this.run.stopRequested) return false;
-      const ref = String(step.tap || '').replace('{language}', control);
-      const point = this.resolveRef(ref);
-      if (!point) {
-        this.run.log(`Route step "${ref}" does not resolve — stopping the language switch.`, 'warn');
-        return false;
+
+      if (step.findAndTap) {
+        const ok = await this.findAndTapListEntry(
+          String(step.findAndTap).replace('{language}', wanted),
+          step.in || 'settings.languagePicker'
+        );
+        if (!ok) return false;
+      } else if (step.verifyChecked) {
+        const ok = await this.verifyLanguageChecked(String(step.verifyChecked).replace('{language}', wanted));
+        if (!ok) return false;
+      } else if (step.action === 'restart' || step.restart) {
+        if (!(await this.restartApp('so the UI stops rendering the language it launched with'))) return false;
+      } else if (step.dismiss) {
+        await this.clearAutoDismissModals(await this.settleOnly());
+      } else if (step.tap) {
+        const point = this.resolveRef(String(step.tap));
+        if (!point) {
+          this.run.log(`Route step "${step.tap}" does not resolve — stopping the language switch.`, 'warn');
+          return false;
+        }
+        try {
+          await this.tapAt(point.x, point.y);
+        } catch (e) {
+          this.run.log(`Route step "${step.tap}" failed: ${e.message}`, 'warn');
+          return false;
+        }
       }
-      try {
-        await this.tapAt(point.x, point.y);
-      } catch (e) {
-        this.run.log(`Route step "${ref}" failed: ${e.message}`, 'warn');
-        return false;
-      }
-      await sleep(Number(step.wait) || this.cfg.settleMs);
+      if (step.wait) await sleep(Number(step.wait));
+      else if (!step.action && !step.dismiss) await sleep(this.cfg.settleMs);
     }
     this.run.log('Language switch done.');
+    return true;
+  }
+
+  /**
+   * The picker row that corresponds to a sheet column.
+   *
+   * The two rarely read the same. A column headed "Portuguese (Brazil)" has to
+   * find a row reading "PORTUGUESE (BRAZIL)", and a column headed "pt-BR" has
+   * to find it without sharing a single word. Matching against the recorded
+   * list of entries also means an unknown language is caught here — before the
+   * picker is opened and something gets tapped — rather than after a fruitless
+   * scroll through nineteen rows.
+   */
+  pickerEntryFor(header) {
+    const wanted = String(header || '').trim();
+    if (!wanted) return null;
+    const picker = this.routeScreens['settings.languagePicker'];
+    const entries = (picker && picker.entries && picker.entries.order) || [];
+    if (!entries.length) return wanted;      // nothing recorded; try the header as written
+
+    const squash = (s) => String(s).toLowerCase().replace(/[^a-z]/g, '');
+    const a = squash(wanted);
+    const exact = entries.find((e) => squash(e) === a);
+    if (exact) return exact;
+    // "Portuguese (Brazil)" against "PORTUGUESE (BRAZIL)" is already handled;
+    // this catches "Portuguese" against the two Portuguese rows by preferring
+    // the one the header is a prefix of.
+    const partial = entries.find((e) => squash(e).startsWith(a) || a.startsWith(squash(e)));
+    if (partial) {
+      this.run.log(`Sheet column "${wanted}" matched the picker entry "${partial}".`);
+      return partial;
+    }
+    this.run.log(`The language picker has no entry matching the sheet column "${wanted}" — leaving the game's language alone. Recorded entries: ${entries.join(', ')}.`, 'warn');
+    return null;
+  }
+
+  /**
+   * Find a row by its text in a scrolling list and tap it.
+   *
+   * Locate and tap have to happen close together. The picker re-anchors to the
+   * checked entry a second or two after it settles, so a screenshot taken,
+   * reasoned about at leisure, and then acted on describes a list that has
+   * already moved — which is how an earlier pass selected the wrong language
+   * three times running. Everything here is arranged to shorten that gap:
+   * settle, capture once, locate in that capture, tap immediately.
+   */
+  async findAndTapListEntry(needle, screenName) {
+    const def = this.routeScreens[screenName];
+    const scroll = def && def.scrollable;
+    const size = this.deviceSize || { width: 1080, height: 1920 };
+    const maxSweeps = 8;
+
+    for (let sweep = 0; sweep <= maxSweeps; sweep++) {
+      if (this.run.stopRequested) return false;
+
+      // Momentum first: a list still gliding reports positions that are stale
+      // by the time a tap lands.
+      const cap = await this.settleOnly();
+      let point = null;
+      try {
+        point = await this.analyzer.locateText(cap.png, needle);
+      } catch (e) {
+        this.run.log(`Could not look for "${needle}": ${e.message}`, 'warn');
+        return false;
+      }
+
+      if (point) {
+        const x = Math.max(0, Math.min(1, point.x)) * size.width;
+        const y = Math.max(0, Math.min(1, point.y)) * size.height;
+        await this.tapAt(x, y);              // immediately, before it re-anchors
+        await sleep(600);
+        return true;
+      }
+
+      if (!scroll || !Array.isArray(scroll.region)) {
+        this.run.log(`"${needle}" is not on screen and ${screenName} has no scrollable region recorded.`, 'warn');
+        return false;
+      }
+      const [x0, y0, x1, y1] = scroll.region;
+      const midX = (x0 + x1) / 2 * size.width;
+      const top = (y0 + (y1 - y0) * 0.25) * size.height;
+      const bottom = (y0 + (y1 - y0) * 0.75) * size.height;
+      try {
+        await this.adb.swipe(Math.round(midX), Math.round(bottom), Math.round(midX), Math.round(top), 500);
+      } catch (e) {
+        this.run.log(`Could not scroll ${screenName}: ${e.message}`, 'warn');
+        return false;
+      }
+    }
+    this.run.log(`Scrolled ${screenName} to the end without finding "${needle}".`, 'warn');
+    return false;
+  }
+
+  /**
+   * Read the checkbox back before confirming.
+   *
+   * Cheap, and it catches the case this list is prone to: the tap landed a row
+   * off, or on nothing at all because the list moved underneath it. Confirming
+   * without checking means the whole scan then runs against the wrong language
+   * and every finding in it is worthless.
+   */
+  async verifyLanguageChecked(needle) {
+    const cap = await this.settleOnly();
+    let checked = null;
+    try {
+      checked = await this.analyzer.locateText(cap.png, needle, { requireChecked: true });
+    } catch (e) {
+      this.run.log(`Could not verify the language selection: ${e.message}`, 'warn');
+      return true;      // do not abandon the switch over a failed read
+    }
+    if (!checked) {
+      this.run.log(`"${needle}" does not look selected — not confirming, and leaving the language alone.`, 'warn');
+      this.run.warnings.push(`Could not select ${needle} in the language picker; the scan ran in whatever language the game was already in.`);
+      return false;
+    }
+    this.run.log(`${needle} is selected.`);
+    return true;
+  }
+
+  /** Force-stop and relaunch, then wait for the app to come back. */
+  async restartApp(why) {
+    const pkg = (this.cfg.androidPackage || '').trim();
+    if (!pkg) {
+      this.run.warnings.push('The route map asks for a restart after the language change, but no Android package is set, so it was skipped — some strings may still be in the previous language.');
+      return true;
+    }
+    this.run.log(`Restarting ${pkg} ${why}.`);
+    try {
+      await this.adb.shell(`am force-stop ${pkg}`);
+      await sleep(2000);
+      await this.adb.shell(`monkey -p ${pkg} -c android.intent.category.LAUNCHER 1`);
+    } catch (e) {
+      this.run.log(`Restart failed: ${e.message}`, 'warn');
+      return false;
+    }
     return true;
   }
 
@@ -661,6 +924,24 @@ class Crawler {
    */
   async dismissOverlays(max = 3) {
     if (!this.adb) return false;
+
+    // Try the route map's own close controls first. Back is a blunt instrument
+    // and in some games a dangerous one: on the Indus lobby it opens the
+    // exit-game confirmation, so a generic "press back until the overlay goes
+    // away" loop eventually quits the app and ends the run. If the route map
+    // names the button that closes this modal, press that instead.
+    if (this.route) {
+      const here = await this.currentSig();
+      if (await this.clearAutoDismissModals(here.cap)) {
+        const after = await this.currentSig();
+        if (!this.rootSig || after.sig === this.rootSig) return true;
+      }
+      if (this.hazardWarnsAgainstBack()) {
+        this.run.log('The route map flags back as unsafe in this app — not using it to clear overlays.', 'warn');
+        return false;
+      }
+    }
+
     // Past runs may already know what clears this app's launch interstitial.
     if (this.mem && memory.bestDismissal(this.mem, 'launch_interruption') === 'back') max = Math.max(max, 2);
     for (let i = 0; i < max; i++) {
@@ -877,7 +1158,19 @@ class Crawler {
     if (known) {
       this.routeScreenFor.set(screenId, known);
       this.run.log(`Route map recognises ${screenId} as "${known.name}".`);
+      // Without the bridge there are no strings until this point, so a modal
+      // marked "dismiss on sight" can only be recognised once it has been
+      // read. Note it here; actionsFor closes it instead of exploring it.
+      if (known.def && known.def.autoDismiss) {
+        this.autoDismissScreens.add(screenId);
+        this.run.log(`${screenId} is "${known.name}", which the route map says to dismiss rather than explore.`);
+      }
     }
+
+    // Which route screen this is can only be known once its strings have been
+    // read, so the source-language pair is dealt with here rather than before
+    // the vision pass.
+    const baselineIssues = await this.compareWithBaseline(known, cap, seen, screenId, file, ctx, depth, pathLabels);
     await this.maybeRecover(seen);
 
     // 4. strings only the model could see get the same sheet treatment
@@ -903,6 +1196,7 @@ class Crawler {
     let issues = [
       ...staticIssues,
       ...aiStatic,
+      ...baselineIssues,
       ...(vision.issues || []).map((i) => ({
         source: 'vision',
         type: i.type,
@@ -960,6 +1254,83 @@ class Crawler {
   }
 
   /**
+   * Compare this screen with the same screen in the source language.
+   *
+   * On a source-language run this only records: the screenshot and its strings
+   * are filed under the route screen's name so later runs have something to
+   * compare against. On a target-language run, if a recording exists, the two
+   * captures are put side by side and the differences between them are the
+   * findings — which strings did not change, and which ones no longer fit.
+   *
+   * The comparison is worth its extra call for a reason that is easy to miss:
+   * it is the only check here that can *clear* a finding. A label running off
+   * its plate looks like a translation defect right up until the same label
+   * runs off the same plate in English, at which point it stops being the
+   * translator's problem and becomes the layout's. Reporting it against the
+   * translation would send the wrong team after it.
+   */
+  async compareWithBaseline(known, cap, seen, screenId, file, ctx, depth, pathLabels) {
+    if (!this.baselineEnabled || !known) return [];
+    const screenName = known.name;
+
+    if (this.capturingBaseline) {
+      baseline.record(this.routeName, this.sourceLanguage, screenName, { texts: seen, png: cap.png });
+      return [];
+    }
+
+    const pair = baseline.get(this.routeName, this.sourceLanguage, screenName);
+    if (!pair) {
+      this.run.log(`No ${this.sourceLanguage} capture of "${screenName}" yet — scan once in ${this.sourceLanguage} to get overflow comparisons here.`);
+      return [];
+    }
+
+    // The cheap half needs no model at all: a string that is still exactly the
+    // source string was not translated.
+    const identical = baseline.untranslatedCandidates(pair.texts, seen);
+
+    if (!pair.png || !this.cfg.visionEnabled) {
+      return identical.map((text) => ({
+        source: 'baseline',
+        type: 'untranslated',
+        severity: 'medium',
+        confidence: 0.8,
+        text,
+        where: screenName,
+        message: `"${text}" is character-for-character the ${this.sourceLanguage} string on this screen.`,
+      }));
+    }
+
+    let result = { issues: [] };
+    try {
+      result = await this.analyzer.compareToBaseline(pair.png, cap.png, {
+        ...ctx,
+        screenName,
+        baselineLanguage: this.sourceLanguage,
+        identical,
+      });
+    } catch (e) {
+      this.run.log(`Could not compare "${screenName}" with its ${this.sourceLanguage} capture: ${e.message}`, 'warn');
+      return [];
+    }
+
+    const issues = (result.issues || []).map((i) => ({
+      source: 'baseline',
+      type: i.type,
+      severity: i.severity,
+      confidence: i.confidence,
+      text: i.text,
+      where: i.where || screenName,
+      element: i.element || '',
+      expected: i.expected || '',
+      message: i.message,
+    }));
+    if (issues.length) {
+      this.run.log(`Comparing "${screenName}" with its ${this.sourceLanguage} capture found ${issues.length} difference${issues.length === 1 ? '' : 's'}.`);
+    }
+    return issues;
+  }
+
+  /**
    * Text below the fold is invisible to a single screenshot, so every screen
    * gets scrolled through before we move on. With the bridge we drive each
    * ScrollRect exactly; without it we swipe and watch for the screen to stop
@@ -970,7 +1341,87 @@ class Crawler {
     if (this.useBridge && cap.state && Array.isArray(cap.state.scrolls)) {
       return this.probeBridgeScrolls(cap, baseId, depth, pathLabels);
     }
+    const regions = this.routeScrollRegions(baseId);
+    if (regions.length) return this.probeRouteScrolls(regions, baseId, depth, pathLabels);
     return this.probeSwipeScrolls(cap, baseId, depth, pathLabels);
+  }
+
+  /**
+   * The scrollable areas an earlier pass recorded for this screen.
+   *
+   * The generic probe swipes vertically up the middle of the screen, which is
+   * right often enough to be worth keeping and wrong in exactly the cases that
+   * hide the most text: a weapon strip that scrolls sideways along the bottom,
+   * a rewards rail a third of the way across that is narrower than the swipe,
+   * an item grid beside a detail panel that must not be dragged. Swiping the
+   * centre of those screens either does nothing or drags the wrong thing.
+   */
+  routeScrollRegions(screenId) {
+    const match = this.routeScreenFor.get(screenId);
+    if (!match) return [];
+    const { name, def } = match;
+    const out = [];
+    const add = (label, s) => {
+      if (!s || !Array.isArray(s.region) || s.region.length !== 4) return;
+      out.push({ label: `${name}.${label}`, region: s.region, axis: s.axis === 'horizontal' ? 'horizontal' : 'vertical' });
+    };
+    add('scroll', def.scrollable);
+    for (const [gridName, grid] of Object.entries(def.grids || {})) add(gridName, grid && grid.scrollable);
+    return out;
+  }
+
+  /** Swipe inside each recorded region, along the axis it actually scrolls. */
+  async probeRouteScrolls(regions, baseId, depth, pathLabels) {
+    if (!this.adb) return;
+    const size = this.deviceSize || { width: 1080, height: 1920 };
+
+    for (const region of regions) {
+      const [x0, y0, x1, y1] = region.region;
+      const midX = (x0 + x1) / 2 * size.width;
+      const midY = (y0 + y1) / 2 * size.height;
+      // Swipe across 60% of the region so the gesture stays inside it — a
+      // longer drag starting outside picks up whatever is next door.
+      const spanX = (x1 - x0) * size.width * 0.3;
+      const spanY = (y1 - y0) * size.height * 0.3;
+      const horizontal = region.axis === 'horizontal';
+
+      const fwd = horizontal
+        ? [midX + spanX, midY, midX - spanX, midY]
+        : [midX, midY + spanY, midX, midY - spanY];
+
+      let prevSig = null;
+      let steps = 0;
+      for (let step = 1; step <= this.cfg.scrollSteps; step++) {
+        if (this.run.stopRequested) break;
+        try {
+          await this.adb.swipe(Math.round(fwd[0]), Math.round(fwd[1]), Math.round(fwd[2]), Math.round(fwd[3]), 400);
+        } catch (e) {
+          this.run.log(`Could not swipe ${region.label}: ${e.message}`, 'warn');
+          break;
+        }
+        const next = await this.settle();
+        const sig = this.signature(next);
+        if (sig === prevSig) break;            // reached the end of the list
+        prevSig = sig;
+        steps++;
+        if (this.visited.has(sig)) continue;
+
+        const id = `${baseId}-${region.axis === 'horizontal' ? 'pan' : 'scroll'}${step}`;
+        this.visited.set(sig, id);
+        if (next.hash) this.hashes.push({ hash: next.hash, sig });
+        this.screenCount++;
+        this.run.log(`Scrolled ${region.label} (${step}) — capturing ${id}`);
+        await this.analyzeScreen(next, id, depth, [...pathLabels, `${region.label} ${step}`]);
+      }
+
+      // Put it back, so the parent screen still matches when we return to it.
+      for (let i = 0; i < steps; i++) {
+        try {
+          await this.adb.swipe(Math.round(fwd[2]), Math.round(fwd[3]), Math.round(fwd[0]), Math.round(fwd[1]), 400);
+        } catch { break; }
+      }
+      if (steps) await sleep(this.cfg.settleMs);
+    }
   }
 
   /** Vision mode: swipe down the screen until nothing new appears. */

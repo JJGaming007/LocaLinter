@@ -1,0 +1,134 @@
+'use strict';
+process.env.LOCALINTER_DATA_DIR = require('os').tmpdir() + '/localinter-selftest';
+
+const assert = require('assert');
+const { Crawler } = require('../lib/crawler');
+const baseline = require('../lib/baseline');
+const route = require('../routes/indus.json');
+
+const logs = [];
+const run = { log: (m) => logs.push(String(m)), warnings: [], skipped: [], emit() {}, issues: [] };
+const cfg = { blockedLabels: [], probeLabels: [], scrollSteps: 3, settleMs: 10, scrollProbe: true };
+
+function makeCrawler(targetHeader = 'Portuguese (Brazil)') {
+  const c = new Crawler({
+    cfg, adb: null, bridge: null, sheet: null, analyzer: null, run, route,
+    target: { header: targetHeader, code: 'pt-BR', rtl: false, sourceHeader: 'English', expectsNonLatin: false },
+  });
+  c.deviceSize = { width: 2400, height: 1080 };
+  return c;
+}
+
+// ── 1. picker entry resolution ────────────────────────────────────────────
+{
+  const c = makeCrawler();
+  assert.strictEqual(c.pickerEntryFor('Portuguese (Brazil)'), 'PORTUGUESE (BRAZIL)');
+  assert.strictEqual(c.pickerEntryFor('portuguese (brazil)'), 'PORTUGUESE (BRAZIL)');
+  assert.strictEqual(c.pickerEntryFor('German'), 'GERMAN');
+  assert.strictEqual(c.pickerEntryFor('Thai'), 'THAI', 'Thai must resolve — it was missing from the old list');
+  assert.strictEqual(c.pickerEntryFor('Tagalog'), 'TAGALOG');
+  assert.strictEqual(c.pickerEntryFor('Klingon'), null, 'an unknown language must be refused, not guessed');
+  console.log('1 ok  picker entries resolve, including the four that were missing');
+}
+
+// ── 2. auto-dismiss recognition ───────────────────────────────────────────
+{
+  const c = makeCrawler();
+  const daily = c.identifyRouteScreen(['DAILY LOGIN REWARDS', 'Green Cloak', 'CLAIM']);
+  assert.strictEqual(daily && daily.name, 'dailyLoginRewards');
+  assert.ok(daily.def.autoDismiss, 'the daily-login modal must be marked dismiss-on-sight');
+  assert.ok(c.resolveRef(daily.def.autoDismiss.tap), 'its close control must resolve to a point');
+
+  const exit = c.identifyRouteScreen(['EXIT GAME', 'Are you sure you want to exit']);
+  assert.strictEqual(exit && exit.name, 'exitConfirm');
+  assert.ok(exit.def.autoDismiss);
+  const p = c.resolveRef(exit.def.autoDismiss.tap);
+  assert.ok(Math.abs(p.x - 0.434 * 2400) < 1, 'exitConfirm must dismiss via NO, not YES');
+  console.log('2 ok  modals identified and their close controls resolve');
+}
+
+// ── 3. back is refused where the route says it is unsafe ──────────────────
+{
+  const c = makeCrawler();
+  assert.strictEqual(c.hazardWarnsAgainstBack(), true, 'Indus flags back as unsafe');
+  const bare = new Crawler({
+    cfg, adb: null, bridge: null, sheet: null, analyzer: null, run,
+    route: { screens: {}, hazards: { something: 'nothing to do with navigation' } },
+    target: { header: 'X', sourceHeader: 'English' },
+  });
+  assert.strictEqual(bare.hazardWarnsAgainstBack(), false, 'an unrelated hazard must not disable back');
+  console.log('3 ok  back is refused on Indus and allowed elsewhere');
+}
+
+// ── 4. scrollable regions come off the route map ──────────────────────────
+{
+  const c = makeCrawler();
+  c.routeScreenFor.set('s1', { name: 'weapons.arsenal', def: route.screens['weapons.arsenal'] });
+  const regions = c.routeScrollRegions('s1');
+  assert.ok(regions.length, 'arsenal must offer a scroll region');
+  assert.ok(regions.some((r) => r.axis === 'horizontal'), 'the weapon strip scrolls sideways');
+
+  c.routeScreenFor.set('s2', { name: 'store.bundleDetail', def: route.screens['store.bundleDetail'] });
+  const rewards = c.routeScrollRegions('s2');
+  assert.ok(rewards.some((r) => r.axis === 'vertical'));
+
+  assert.deepStrictEqual(c.routeScrollRegions('unknown'), [], 'an unrecognised screen falls back to the generic probe');
+  console.log('4 ok  scroll regions and axes read from the route map');
+}
+
+// ── 5. baseline round-trip ────────────────────────────────────────────────
+{
+  const c = makeCrawler('English');
+  assert.strictEqual(c.capturingBaseline, true, 'a run in the source language records the baseline');
+  assert.strictEqual(c.routeName, 'Indus');
+
+  const t = makeCrawler('Portuguese (Brazil)');
+  assert.strictEqual(t.capturingBaseline, false);
+
+  baseline.record('Indus', 'English', 'store.bundleDetail', {
+    texts: ['Rewards', 'BUY FULL PACKAGE', '20% OFF', 'Offer Valid Till :'],
+    png: Buffer.from('not-a-real-png'),
+  });
+  const got = baseline.get('Indus', 'English', 'store.bundleDetail');
+  assert.ok(got && got.texts.includes('Rewards'));
+  assert.ok(got.png, 'the screenshot must survive the round trip');
+
+  // The strings that stayed English are the untranslated candidates.
+  const identical = baseline.untranslatedCandidates(
+    got.texts,
+    ['Recompensas', 'BUY FULL PACKAGE', '20% OFF', 'Oferta válida até:']
+  );
+  assert.ok(identical.includes('BUY FULL PACKAGE'));
+  assert.ok(identical.includes('20% OFF'));
+  assert.ok(!identical.includes('Rewards'), 'a translated string is not a candidate');
+  assert.ok(!identical.includes('Offer Valid Till :'), 'a translated string is not a candidate');
+  console.log('5 ok  baseline round-trips and finds the real untranslated cluster');
+}
+
+// ── 6. noise is not mistaken for untranslated text ────────────────────────
+{
+  const same = ['1/1', 'x 60', '₹29.00', 'OK', '2.14.0', 'LOUD'];
+  const out = baseline.untranslatedCandidates(same, same);
+  assert.deepStrictEqual(out, ['LOUD'], 'numbers and short tokens are not findings; a word is a candidate');
+  console.log('6 ok  numeric and short strings are not reported as untranslated');
+}
+
+// ── 7. the blocked list still guards the dangerous taps ───────────────────
+{
+  const c = new Crawler({
+    cfg: { ...cfg, blockedLabels: route.blocked.labels.map((l) => `^${l.replace(/\./g, '\\.').replace(/\*/g, '.*')}$`) },
+    adb: null, bridge: null, sheet: null, analyzer: null, run, route,
+    target: { header: 'German', sourceHeader: 'English' },
+  });
+  assert.strictEqual(c.isBlocked('lobby.play'), true);
+  assert.strictEqual(c.isBlocked('exitConfirm.yes'), true);
+  assert.strictEqual(c.isBlocked('dailyLoginRewards.claim'), true);
+  assert.strictEqual(c.isBlocked('settings.resetSettings'), true);
+  // ...but the Store catalogues are now reachable, which they were not before.
+  assert.strictEqual(c.isBlocked('store.catGems'), false, 'store categories must be explorable');
+  assert.strictEqual(c.isBlocked('store.bundleStore.view'), false);
+  assert.strictEqual(c.isBlocked('store.offers.purchase'), true, 'purchases stay blocked');
+  console.log('7 ok  dangerous taps blocked, Store catalogues opened up');
+}
+
+console.log('\nall self-tests passed');

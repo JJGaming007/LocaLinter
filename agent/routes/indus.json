@@ -1,5 +1,5 @@
 {
-  "$comment": "Route map for Indus. Coordinates are normalised (0-1) against a landscape screen so they survive a change of device resolution. Re-recorded by hand on 2026-08-18 against com.indusgame.play 2.14.0 on a vivo I2217 (2400x1080). Every coordinate below was tapped and confirmed on the device in that session unless marked inherited. Prose notes explain WHY, so a later pass can tell a deliberate choice from a stale guess.",
+  "$comment": "Route map for Indus. Coordinates are normalised (0-1) against a landscape screen so they survive a change of device resolution. Recorded by hand on 2026-08-18 against com.indusgame.play 2.14.0 on a vivo I2217 (2400x1080), and extended the same day by a second session that opened the Store catalogues, the mission sub-categories, the Weapons sub-collections, and ran English / German / Japanese passes. Every coordinate below was tapped and confirmed on the device unless marked inherited. Prose notes explain WHY, so a later pass can tell a deliberate choice from a stale guess. Where the second session DISAGREED with the first, the correction and the evidence are stated inline rather than silently overwritten.",
   "app": {
     "name": "Indus",
     "packages": {
@@ -19,7 +19,28 @@
       ],
       "build": "2.14.0 #11451000",
       "package": "com.indusgame.play",
-      "date": "2026-08-18"
+      "date": "2026-08-18",
+      "sessions": [
+        {
+          "date": "2026-08-18",
+          "pass": "first",
+          "languages": [
+            "Portuguese (Brazil)"
+          ],
+          "scope": "lobby, settings, inventory, abilities, missions, ranked, store shell, weapons modal"
+        },
+        {
+          "date": "2026-08-18",
+          "pass": "second",
+          "languages": [
+            "Portuguese (Brazil)",
+            "English",
+            "German",
+            "Japanese"
+          ],
+          "scope": "Store catalogues (all 7), mission sub-categories (all 4), Weapons sub-collections (all 3), dailyLoginRewards, English baseline, German overflow pass, Japanese glyph pass"
+        }
+      ]
     },
     "$buildStamp": "The lobby and every settings screen print a footer at the very bottom: 'v2.14.0 #11451000 (11451000) | SID : FAUPEHGM | B : A | India (b:in) | T : <epoch>'. Read it at the start of a run and record it with the findings — it is the only in-app statement of which build, which account and which region were actually scanned. Region there (India) is the billing/content region and is independent of the UI language.",
     "versionFooter": {
@@ -27,7 +48,7 @@
         0.02,
         0.965,
         0.6,
-        1.0
+        1
       ]
     }
   },
@@ -41,9 +62,11 @@
     "gridDetailPanels": "Inventory and Abilities are grids that drive a detail panel. Selecting a cell replaces the name, the lore/description and sometimes a stat block on the right. The grid holds dozens of items and only the selected one's text is on screen, so every cell in every category and every tab has to be tapped. Confirmed: avatar cell 1 showed 'BRUNO PLAYHARD / From a mobile gaming channel to the top of the world...', cell 2 showed 'ADI SERIES / Customizable Avatar. Parts can be switched with other series...'. Screenshotting the grid once would have captured one of them.",
     "rowDescriptionPanels": "Settings > Gameplay lists option rows on the right and shows a description for the SELECTED row only, in a panel at lower left. Tapping a different row swaps that text. Confirmed: 'Auto Sprint' showed 'Enables continuous sprinting when moving forward...' and 'Cosmium Trigger' showed 'Tap the button to interact with Cosmium.'. Every row must be selected to read its description.",
     "infoBadgeFlyouts": "Small circled '?' chips sit next to some labels. Tapping one opens a flyout that is not reachable any other way and that OVERLAPS the text beneath it. Confirmed on Abilities: the '?' beside the ability name opened a 'HOW TO USE' panel with three lines ('Equip this ability from loadout', 'Press the button in game to use it', 'Once used it enters cooldown') covering the ability description. Capture the screen before opening the badge and again after, then dismiss it, or the occluded strings are lost.",
-    "scrollMomentumSettle": "Scrollable lists keep moving after the swipe ends. Tapping a target located in a screenshot taken right after a swipe hits the wrong row. This cost three misfires in the language picker: aiming at PORTUGUESE (BRAZIL) selected GERMAN, then SPANISH (MEXICO). The rule: after any swipe, capture two screenshots ~2s apart and compare them; only when they are identical is the list settled. Then re-locate the target by reading the fresh screenshot, never from the pre-scroll one.",
+    "scrollMomentumSettle": "Scrollable lists keep gliding after the swipe. Take two screenshots ~2s apart and proceed only when they are identical, then re-locate the target in the FRESH screenshot. Ignoring this is how the first pass selected the wrong language three times AND how it missed four entries in the language list (see settings.languagePicker.entries — one un-settled swipe skipped a whole page and the list was recorded as 15 entries instead of 19). NOTE: settling is necessary but NOT sufficient in the language picker, which also re-anchors to the checked entry seconds after settling — see hazards.languagePickerReanchors.",
     "stickyTabs": "Settings reopens on whichever tab was last used, not on General. Do not assume the landing tab — read the highlighted rail entry and navigate from what is actually on screen.",
-    "englishBaseline": "The strongest overflow and truncation findings come from capturing the same screen twice, once in English and once in the target language, and comparing the rendered text extents. 'SEASON ENDED' cleared the season banner with ~40% space to spare; 'TEMPORADA TERMINADA' ran under the character artwork to the card's right edge. Neither screenshot alone proves a defect — the pair does. Capture an English baseline pass first whenever the budget allows."
+    "englishBaseline": "Capture every screen twice: once in the source language and once in the target, then compare the same element in the pair. This is the only way to make an overflow reportable rather than arguable — 'Recompensas is too long' is an opinion, but English 'Rewards' fitting on one line beside pt-BR 'Recompen/sas' splitting mid-word is a fact. It is equally important for what it disproves: on this build the baseline killed three plausible findings that turned out to be source defects present in English. Compare text EXTENTS (does the string still fit its container?) and CONTENT (do source and target say the same thing?), and never diff a rotating carousel slot — the lobby's third promo card shows different content on each capture regardless of language.",
+    "restartAfterLanguageChange": "Restart the app after every language change before capturing anything. This build freezes part of its UI in the language the process launched with — confirmed across four languages, and confirmed fixed by a force-stop and relaunch. Without the restart a scan reports stale strings as untranslated defects throughout the build. Cold launch to the lobby takes ~40s, and a daily-login modal reliably appears afterwards and must be dismissed before any lobby coordinate is driven.",
+    "modalsBeforeCoordinates": "Check for a known modal before driving any recorded coordinate. Indus shows a promo interstitial and a DAILY LOGIN REWARDS modal over the lobby, both after launch and after every language change. During recording the daily-login modal swallowed three separate navigation sequences: the taps landed on the modal, the crawl believed it had reached Settings, and the following captures were of the wrong screen and would have been reported as such. Dismiss with the modal's own close control, never with BACK — BACK on the lobby opens the exit-game dialog."
   },
   "recovery": {
     "$comment": "EC-70001 'LOST CONNECTION' can strand the app on a modal that RETRY does not clear. A force-stop and relaunch reliably recovers it; observed on dev 1.12.0, not reproduced on prod 2.14.0.",
@@ -84,10 +107,16 @@
       "settings.account.linkPlayGames",
       "settings.account.linkGoogle",
       "abilities.upgrade",
-      "store.*",
+      "store.*.purchase",
+      "store.*.buy",
+      "store.bundleDetail.pricePlate",
+      "store.creatorCode.enterCode",
       "exitConfirm.yes",
+      "dailyLoginRewards.claim",
+      "lobby.claim",
       "weapons.*.purchase"
-    ]
+    ],
+    "$refined": "The earlier list blocked 'store.*' wholesale, which would have kept the scan out of the seven Store catalogues entirely — the most commercially visible text in the build and the source of several confirmed findings. Only the purchase confirms are actually dangerous, so they are named. Category rails and item cards are safe and are now explored. Claim buttons are blocked not because they cost money but because they mutate account state and make a run non-repeatable."
   },
   "screens": {
     "lobby": {
@@ -419,7 +448,7 @@
         "rowPitch": 0.096
       },
       "entries": {
-        "$comment": "Complete list as shipped in 2.14.0, top to bottom, enumerated by scrolling the modal end to end on 2026-08-18. 15 entries. ARABIC IS NOT PRESENT — it was in 1.12.0 and has since been removed, which retires the old arabicTofu concern. Every entry is written in ENGLISH rather than as an endonym; see knownFindings.languageNamesNotEndonyms.",
+        "$comment": "Complete list as shipped in 2.14.0, top to bottom. RE-ENUMERATED on 2026-08-18 (second pass), scrolling end to end twice with a settle between every swipe. There are NINETEEN entries, not the fifteen recorded earlier: TAGALOG, MALAY, VIETNAMESE and THAI sit between INDONESIAN and JAPANESE and were missed entirely by the first enumeration — almost certainly one un-settled swipe that skipped a page, which is exactly the failure techniques.scrollMomentumSettle exists to prevent. Arabic is still absent (retired in 2.14.0). Every entry is written in ENGLISH rather than as an endonym; see knownFindings.languageNamesNotEndonyms.",
         "order": [
           "ENGLISH",
           "FRENCH",
@@ -432,13 +461,34 @@
           "PORTUGUESE (PORTUGAL)",
           "TURKISH",
           "INDONESIAN",
+          "TAGALOG",
+          "MALAY",
+          "VIETNAMESE",
+          "THAI",
           "JAPANESE",
           "KOREAN",
           "CHINESE (TRADITIONAL)",
           "CHINESE (SIMPLIFIED)"
         ],
         "incomplete": false,
-        "count": 15
+        "count": 19,
+        "untested": [
+          "THAI",
+          "TAGALOG",
+          "MALAY",
+          "VIETNAMESE",
+          "KOREAN",
+          "CHINESE (TRADITIONAL)",
+          "CHINESE (SIMPLIFIED)",
+          "ITALIAN",
+          "SPANISH (SPAIN)",
+          "SPANISH (MEXICO)",
+          "PORTUGUESE (PORTUGAL)",
+          "TURKISH",
+          "INDONESIAN",
+          "RUSSIAN"
+        ],
+        "$untested": "Languages never yet driven on the device. THAI is the highest-value next target: it is newly present, it was missed by the first enumeration, and its stacked diacritics are the build's biggest remaining glyph-coverage risk. Japanese already passed glyph coverage, so the CJK font is present."
       }
     },
     "inventory": {
@@ -617,7 +667,7 @@
           "Daily Missions"
         ]
       },
-      "$comment": "Category rail on the left, a scrolling list of mission rows on the right, each with its own progress counter and an IR/GO button. The mission text is generated from templates with a count substituted in, which is where the pluralisation defects live — read every row, not just the first screenful.",
+      "$comment": "Category rail on the left, a scrolling list of mission rows on the right, each with a progress counter and an IR/GO button. All four sub-categories are now mapped as their own screens. The mission text is generated from templates with a count substituted in, which is where the pluralisation and template-composition defects live — read every row in every sub-category, not just the first screenful of the first one.",
       "controls": {
         "back": [
           0.035,
@@ -702,7 +752,7 @@
           "Bundle Store"
         ]
       },
-      "$comment": "The most commercially visible text in the build. Seven categories down the left, each its own catalogue of priced items. Prices follow the account REGION (₹ for India) and not the UI language — see checkHints.currencyFollowsRegion. Never tap a purchase confirm.",
+      "$comment": "The most commercially visible text in the build. Seven categories down the left, each its own catalogue — all seven are now mapped as their own screens (store.featured .. store.creatorCode). Prices follow the account REGION (₹ for India) and not the UI language. Tapping a CATEGORY or an item CARD is safe and necessary; only a purchase confirm is off limits. See blocked.labels, which now says so precisely.",
       "controls": {
         "back": [
           0.035,
@@ -751,7 +801,7 @@
           "Melee"
         ]
       },
-      "$comment": "ARMAS is not a screen — it opens a modal chooser over the dimmed lobby with three cards. Each card leads to a deeper collection. A crawler that treats this as a leaf screen records three words and stops.",
+      "$comment": "ARMAS is not a screen — it opens a modal chooser over the dimmed lobby with three cards, each leading to a deeper collection. All three are now mapped. A crawler that treats this as a leaf screen records three words and stops.",
       "isModal": true,
       "controls": {
         "cardArsenal": [
@@ -797,11 +847,582 @@
         "tap": "exitConfirm.no",
         "$comment": "Dismiss on sight; never treat SIM/YES as an explorable control."
       }
+    },
+    "store.featured": {
+      "signature": {
+        "anyText": [
+          "Destaques",
+          "Featured",
+          "Empfohlen",
+          "OUÇA O BARULHO"
+        ]
+      },
+      "$comment": "A single large hero card. The least text of any category; do not mistake a one-card catalogue for a failed capture.",
+      "controls": {
+        "back": [
+          0.035,
+          0.076
+        ],
+        "item": [
+          0.263,
+          0.544
+        ]
+      }
+    },
+    "store.offers": {
+      "signature": {
+        "anyText": [
+          "Ofertas",
+          "Offers",
+          "Angebote",
+          "PACOTE DA FERA",
+          "PACOTE ECONÔMICO"
+        ]
+      },
+      "$comment": "A 4-column grid that also scrolls VERTICALLY — a second row sits below the fold and a single screenshot misses it entirely. Five packs in all on 2026-08-18. A countdown chip sits top right. Pack names are long and fill their cards edge to edge, which makes this the best screen in the build for spotting a German or Russian overflow.",
+      "controls": {
+        "back": [
+          0.035,
+          0.076
+        ]
+      },
+      "grids": {
+        "packs": {
+          "cols": [
+            0.22,
+            0.39,
+            0.56,
+            0.73
+          ],
+          "rows": [
+            0.55
+          ],
+          "detailPanel": null
+        }
+      },
+      "scrollable": {
+        "region": [
+          0.16,
+          0.2,
+          1,
+          0.95
+        ],
+        "axis": "vertical"
+      }
+    },
+    "store.gems": {
+      "signature": {
+        "anyText": [
+          "Gemas",
+          "Gems",
+          "Edelsteine"
+        ]
+      },
+      "$comment": "Six currency SKUs, 3x2. Almost no translatable text — price and quantity only — so a low-yield screen for strings but the right place to check number formatting. See checkHints.numberFormatting.",
+      "controls": {
+        "back": [
+          0.035,
+          0.076
+        ]
+      },
+      "grids": {
+        "skus": {
+          "cols": [
+            0.28,
+            0.45,
+            0.62
+          ],
+          "rows": [
+            0.36,
+            0.72
+          ]
+        }
+      }
+    },
+    "store.bundleStore": {
+      "signature": {
+        "anyText": [
+          "Bundle Store",
+          "LOJA PREMIUM",
+          "PREMIUM STORE"
+        ]
+      },
+      "$comment": "Reached from the rail entry labelled 'Bundle Store' — which is untranslated in every language tested. Its own header is 'PREMIUM STORE' / 'LOJA PREMIUM', a DIFFERENT name for the same place, and the detail screen behind VIEW calls it a third thing. See knownFindings.bundleStoreNaming: that chain is a SOURCE defect, present in English.",
+      "controls": {
+        "back": [
+          0.035,
+          0.076
+        ],
+        "offerTile": [
+          0.1,
+          0.27
+        ],
+        "view": [
+          0.909,
+          0.912
+        ]
+      }
+    },
+    "store.bundleDetail": {
+      "signature": {
+        "anyText": [
+          "BUNDLES STORE",
+          "BUY FULL PACKAGE",
+          "BUY INDIVIDUAL ITEMS"
+        ]
+      },
+      "$comment": "Reached by tapping VIEW on store.bundleStore. Carries the single best overflow exemplar in the build: the rewards column header fits the English 'Rewards' and breaks MID-WORD for longer languages ('Recompen/sas', 'Belohnung/en'). Also an untranslated cluster that is English in every language tested. Never tap the price plate at lower right — that is the purchase.",
+      "controls": {
+        "back": [
+          0.035,
+          0.076
+        ]
+      },
+      "grids": {
+        "individualItems": {
+          "cols": [
+            0.096,
+            0.215
+          ],
+          "rows": [
+            0.64,
+            0.85
+          ]
+        }
+      },
+      "scrollable": {
+        "region": [
+          0.28,
+          0.2,
+          0.34,
+          0.62
+        ],
+        "axis": "vertical",
+        "$comment": "The narrow rewards rail scrolls; more reward items sit below the fold."
+      }
+    },
+    "store.prismatic": {
+      "signature": {
+        "anyText": [
+          "Loja Prismática",
+          "Prismatic Store",
+          "PHOENIX",
+          "SIR TAJ"
+        ]
+      },
+      "$comment": "Two premium skins priced in a prismatic currency. Character names are proper nouns and are not defects. Two extra currency counters appear in the top bar only on this screen.",
+      "controls": {
+        "back": [
+          0.035,
+          0.076
+        ]
+      },
+      "grids": {
+        "skins": {
+          "cols": [
+            0.3,
+            0.68
+          ],
+          "rows": [
+            0.5
+          ]
+        }
+      }
+    },
+    "store.redemption": {
+      "signature": {
+        "anyText": [
+          "Loja de Resgate",
+          "Redeem Store",
+          "Laden einlösen",
+          "RARIDADE",
+          "RARITY",
+          "SELTENHEIT"
+        ]
+      },
+      "$comment": "The densest Store screen: a sort chip, a vertical item-type icon rail, a scrolling grid and a right-hand detail panel that shows only the SELECTED item's name and description (gridDetailPanels applies). The sort chip is a confirmed overflow site in pt-BR. NOTE two things that are NOT defects: the blank third row in the sort dropdown appears in English too, and the item description runs BEHIND the character art rather than being truncated — read a tight crop before calling either one.",
+      "controls": {
+        "back": [
+          0.035,
+          0.076
+        ],
+        "sortChip": [
+          0.47,
+          0.097
+        ]
+      },
+      "grids": {
+        "items": {
+          "cols": [
+            0.302,
+            0.464
+          ],
+          "rows": [
+            0.3,
+            0.53,
+            0.76
+          ],
+          "detailPanel": [
+            0.56,
+            0.15,
+            1,
+            0.32
+          ]
+        }
+      },
+      "typeRail": {
+        "x": 0.156,
+        "y": [
+          0.21,
+          0.32,
+          0.43,
+          0.54,
+          0.65,
+          0.76,
+          0.87
+        ]
+      },
+      "scrollable": {
+        "region": [
+          0.22,
+          0.16,
+          0.55,
+          0.96
+        ],
+        "axis": "vertical"
+      }
+    },
+    "store.creatorCode": {
+      "signature": {
+        "anyText": [
+          "Código de Criador",
+          "Creator Code",
+          "Erstellercode",
+          "APOIE O SEU CRIADOR"
+        ]
+      },
+      "$comment": "Fully translated in pt-BR. 'DIGITE O CÓDIGO' opens a text-entry modal — harmless, but it yields no strings worth the round trip, so it is not explored.",
+      "controls": {
+        "back": [
+          0.035,
+          0.076
+        ],
+        "enterCode": [
+          0.298,
+          0.866
+        ]
+      }
+    },
+    "missions.event": {
+      "signature": {
+        "anyText": [
+          "Missões do Evento",
+          "Event Missions",
+          "Event-Missionen"
+        ]
+      },
+      "$comment": "Five rows on 2026-08-18. Row 1 carries the confirmed pt-BR plural defect ('Obtenha 1 tiros na cabeça').",
+      "controls": {
+        "back": [
+          0.035,
+          0.076
+        ],
+        "claimAll": [
+          0.907,
+          0.922
+        ]
+      },
+      "scrollable": {
+        "region": [
+          0.16,
+          0.18,
+          0.96,
+          0.9
+        ],
+        "axis": "vertical"
+      }
+    },
+    "missions.daily": {
+      "signature": {
+        "anyText": [
+          "Missões Diárias",
+          "Daily Missions",
+          "Tägliche Missionen"
+        ]
+      },
+      "$comment": "Four rows, plus a milestone progress track across the top (0/750 with 250/500/750 markers) that the other sub-categories do not have. Carries BOTH the plural defect and the doubled-preposition template defect on the same row.",
+      "controls": {
+        "back": [
+          0.035,
+          0.076
+        ],
+        "claimAll": [
+          0.907,
+          0.922
+        ]
+      },
+      "scrollable": {
+        "region": [
+          0.16,
+          0.3,
+          0.96,
+          0.9
+        ],
+        "axis": "vertical"
+      }
+    },
+    "missions.weekly": {
+      "signature": {
+        "anyText": [
+          "Missões Semanais",
+          "Weekly Missions",
+          "Wöchentliche Missionen"
+        ]
+      },
+      "$comment": "Two rows only; the pane is mostly empty. That is the game's state, not a failed capture.",
+      "controls": {
+        "back": [
+          0.035,
+          0.076
+        ],
+        "claimAll": [
+          0.907,
+          0.922
+        ]
+      },
+      "scrollable": {
+        "region": [
+          0.16,
+          0.18,
+          0.96,
+          0.9
+        ],
+        "axis": "vertical"
+      }
+    },
+    "missions.loginDaily": {
+      "signature": {
+        "anyText": [
+          "Login Diário",
+          "Daily Login",
+          "RECOMPENSAS DE LOGIN DIÁRIO",
+          "TOKENS DE RESGATE"
+        ]
+      },
+      "$comment": "Not a mission list at all — a seven-tile reward track with a countdown. Distinct from the dailyLoginRewards MODAL, which shows the same content over the lobby and must be dismissed rather than explored.",
+      "controls": {
+        "back": [
+          0.035,
+          0.076
+        ]
+      },
+      "grids": {
+        "rewardTiles": {
+          "cols": [
+            0.242,
+            0.352,
+            0.462,
+            0.572,
+            0.682,
+            0.792,
+            0.902
+          ],
+          "rows": [
+            0.83
+          ]
+        }
+      }
+    },
+    "weapons.arsenal": {
+      "signature": {
+        "anyText": [
+          "ESTATÍSTICAS DE ARMAS",
+          "WEAPON STATS",
+          "Rifle de Assalto",
+          "Assault Rifle",
+          "Mostrar na Tela Inicial"
+        ]
+      },
+      "$comment": "A class rail, a horizontally scrolling weapon strip, and a detail header + stat panel driven by the SELECTED weapon only — gridDetailPanels applies. The class descriptor line ('RIFLE DE ASSALTO TOTALMENTE AUTOMÁTICO') is per-weapon and is the translatable text worth walking; weapon names themselves are proper nouns. Stat labels carry no units here, unlike Abilities.",
+      "controls": {
+        "back": [
+          0.035,
+          0.076
+        ],
+        "skins": [
+          0.868,
+          0.685
+        ],
+        "showOnHome": [
+          0.602,
+          0.7
+        ]
+      },
+      "classRail": {
+        "x": 0.098,
+        "y": [
+          0.183,
+          0.259,
+          0.335,
+          0.412,
+          0.488,
+          0.565,
+          0.641,
+          0.718
+        ]
+      },
+      "grids": {
+        "weaponStrip": {
+          "cols": [
+            0.104,
+            0.246,
+            0.388,
+            0.53,
+            0.672,
+            0.814,
+            0.956
+          ],
+          "rows": [
+            0.888
+          ],
+          "detailPanel": [
+            0.28,
+            0.06,
+            0.72,
+            0.16
+          ]
+        }
+      },
+      "scrollable": {
+        "region": [
+          0.05,
+          0.83,
+          1,
+          0.95
+        ],
+        "axis": "horizontal"
+      }
+    },
+    "weapons.evoX": {
+      "signature": {
+        "anyText": [
+          "EVO-X",
+          "Aparência básica",
+          "Basic Appearance",
+          "BLOQUEADO"
+        ]
+      },
+      "$comment": "Skin-evolution screen: a 1-6 level rail (locked on this account), a skin name over its base weapon, and a level-detail panel. Skin names are proper nouns.",
+      "controls": {
+        "back": [
+          0.035,
+          0.076
+        ]
+      },
+      "levelRail": {
+        "x": 0.075,
+        "y": [
+          0.195,
+          0.262,
+          0.328,
+          0.395,
+          0.46,
+          0.527
+        ]
+      },
+      "grids": {
+        "skinStrip": {
+          "cols": [
+            0.115,
+            0.257,
+            0.399
+          ],
+          "rows": [
+            0.888
+          ]
+        }
+      }
+    },
+    "weapons.melee": {
+      "signature": {
+        "anyText": [
+          "PRESA DA HYDRA",
+          "Corpo a Corpo",
+          "Melee",
+          "DESEQUIPAR"
+        ]
+      },
+      "$comment": "Same stat panel as arsenal, but the CTA is DESEQUIPAR/UNEQUIP rather than SKINS — context-dependent, not an inconsistency. Melee weapons report Mobilidade 0 / Munição 0; that is game data, not a missing string.",
+      "controls": {
+        "back": [
+          0.035,
+          0.076
+        ]
+      },
+      "grids": {
+        "itemStrip": {
+          "cols": [
+            0.115,
+            0.257,
+            0.399
+          ],
+          "rows": [
+            0.888
+          ],
+          "detailPanel": [
+            0.28,
+            0.06,
+            0.72,
+            0.16
+          ]
+        }
+      }
+    },
+    "dailyLoginRewards": {
+      "signature": {
+        "anyText": [
+          "DAILY LOGIN REWARDS",
+          "RECOMPENSAS DE LOGIN DIÁRIO",
+          "TÄGLICHE LOGIN-BELOHNUNGEN",
+          "デイリーログイン報酬",
+          "Green Cloak"
+        ]
+      },
+      "$comment": "HAZARD. A modal that covers the lobby after launch AND after every language change. During the 2026-08-18 second pass it silently swallowed three separate navigation sequences: the taps landed on the modal, the crawl believed it was in Settings, and the next screenshots were of the wrong screen. Dismiss it on sight with the close X — never with BACK, which falls through to the lobby and opens exitConfirm. Its Day tiles carry the confirmed Japanese counter-order defect.",
+      "isModal": true,
+      "controls": {
+        "close": [
+          0.846,
+          0.216
+        ],
+        "claim": [
+          0.793,
+          0.905
+        ]
+      },
+      "grids": {
+        "dayTiles": {
+          "cols": [
+            0.42,
+            0.518,
+            0.617,
+            0.76
+          ],
+          "rows": [
+            0.405,
+            0.655
+          ]
+        }
+      },
+      "autoDismiss": {
+        "tap": "dailyLoginRewards.close",
+        "$comment": "Dismiss on sight. CLAIM is harmless but changes account state, so it is not tapped."
+      }
     }
   },
   "procedures": {
     "setLanguage": {
-      "$comment": "Language is per ACCOUNT, not per device locale — the device stays on India/English and changing it has no effect. Takes ~15s to apply and returns to the SETTINGS screen (not the lobby), still on the Account tab. Re-verified 2026-08-18.",
+      "$comment": "Language is per ACCOUNT, not per device locale — the device stays on India/English and changing it has no effect. Takes ~15s to apply and returns to the SETTINGS screen (not the lobby), still on the Account tab. The picker has no fixed per-language coordinates: it is a scrolling list of 19 entries that must be located by reading the screen, and it RE-ANCHORS to the checked entry (see hazards.languagePickerReanchors), so locate and tap in one motion and read the checkbox back before confirming. Re-verified 2026-08-18 (second pass).",
       "from": "lobby",
       "steps": [
         {
@@ -829,16 +1450,30 @@
         {
           "tap": "settings.languagePicker.confirm",
           "wait": 16000
+        },
+        {
+          "action": "restart",
+          "$comment": "MANDATORY. Parts of the UI stay frozen in the launch language until the process restarts; capturing before this produces false 'untranslated' findings across the build. See hazards.staleLanguageAfterSwitch."
+        },
+        {
+          "wait": 45000,
+          "$comment": "Cold launch to the lobby takes ~40s on the recording device."
+        },
+        {
+          "dismiss": "dailyLoginRewards",
+          "$comment": "The daily-login modal reliably appears after a relaunch."
         }
       ],
-      "endsOn": "settings.account"
+      "endsOn": "lobby"
     }
   },
   "knownIssues": {
-    "$comment": "Confirmed with the team as known and accepted. Per the 2026-08-18 decision these are still REPORTED, but tagged known:true at the lowest severity and collapsed by default, so the list stays honest without them competing with new findings.",
+    "$comment": "Confirmed with the team as known and accepted. These are still REPORTED, but tagged known:true at the lowest severity and collapsed by default, so the list stays honest without them competing with new findings.",
     "settingsLanguageLeak": {
-      "note": "Switching the account language does not fully re-render the Settings screen: a subset of keys keeps rendering in the PREVIOUSLY selected language. Confirmed on 2.14.0 with the account set to English — the screen showed SUPORTE, MUDAR (x2), SAIR DO JOGO, CONFIGURAÇÕES BÁSICAS, REDEFINIR CONFIGURAÇÕES, SELECIONE O IDIOMA, 'Entrar com o Play Games' and 'Entrar com o Google' in Portuguese while every other string was English. Switching to Portuguese rendered all of them correctly, which proves these are not missing translations — it is a refresh bug. The 2026-08-11 French pass hit the same keys (CHANGEMENT, SORTIE DU JEU, SOUTIEN), so it is the same key set every time.",
-      "scope": "settings.*",
+      "note": "Switching the account language does not re-render a fixed set of keys: they keep rendering the language the APP PROCESS WAS LAUNCHED WITH, and only an app restart moves them.",
+      "$correction": "The earlier diagnosis — 'renders in the PREVIOUSLY selected language' — is WRONG and was disproved on 2026-08-18 (second pass). Switching pt-BR -> ENGLISH -> GERMAN -> JAPANESE left these keys in PORTUGUESE at every step, including two switches after Portuguese stopped being active; 'previous language' would have shown English at the second step. A force-stop and relaunch while on Japanese then rendered them all in Japanese (設定をリセット, ゲーム終了), which confirms the launch-time freeze and also proves the translations exist. State the bug as 'does not refresh until the app is restarted' — it is both cheaper to fix and easier to verify than the version recorded before.",
+      "$scopeWidened": "The freeze is NOT limited to Settings. On the same restart the daily-login reward item changed from 'Green Cloak' to 緑のマント, so localized CONTENT is frozen at launch too. The old scope 'settings.*' is too narrow; matchAny still lists only the Settings keys because those are the ones confirmed by name, but a scan must not assume Settings is the only place affected.",
+      "scope": "*",
       "mark": "known",
       "severity": "low",
       "matchAny": [
@@ -850,12 +1485,12 @@
         "SELECIONE O IDIOMA",
         "Entrar com o Play Games",
         "Entrar com o Google",
-        "SOUTIEN",
         "CHANGEMENT",
         "SORTIE DU JEU",
+        "SOUTIEN",
         "PARAMÈTRES DE BASE"
       ],
-      "$stillReport": "Anything in Settings that is NOT in matchAny is a new defect and must be reported normally."
+      "$matchAnyStable": "Verified complete across pt-BR, English, German and Japanese: nothing outside this list leaked in any of them. Anything in Settings NOT in this list is a new defect and reports normally."
     },
     "arabicTofu": {
       "note": "RETIRED. Arabic rendered as tofu boxes in 1.12.0 because the glyph atlas was missing. Arabic is no longer offered at all in 2.14.0 — the language picker was enumerated end to end on 2026-08-18 and holds 15 entries, none of them Arabic. There is nothing left to test or suppress; kept only so a reader of the 2026-08-11 notes knows what happened to it.",
@@ -869,7 +1504,7 @@
     }
   },
   "knownFindings": {
-    "$comment": "Real defects confirmed by hand on 2026-08-18, prod 2.14.0, Portuguese (Brazil). Recorded so a scan can be graded: a run that misses these has a coverage problem, and a run that reports them agrees with a human. These are NOT suppressed.",
+    "$comment": "Real defects confirmed by hand on 2026-08-18, prod 2.14.0. Recorded so a scan can be graded: a run that misses these has a coverage problem, and a run that reports them agrees with a human. These are NOT suppressed. Each carries the languages it was confirmed in — several are now confirmed in more than one, which raises confidence and often moves where the fix belongs.",
     "linguagemVsIdioma": {
       "screen": "settings.account",
       "severity": "medium",
@@ -901,8 +1536,9 @@
       "severity": "medium",
       "type": "overflow",
       "string": "TEMPORADA TERMINADA",
-      "detail": "The season card subtitle. English 'SEASON ENDED' ends with roughly 40% of the card clear; pt-BR 'TEMPORADA TERMINADA' is ~73% wider, runs under the character artwork and reaches the card's right edge. Not hard-truncated on this device, but it has no margin left and a narrower screen or a longer locale will clip it.",
-      "teaches": "Proven by comparing the English and pt-BR captures of the same card. See techniques.englishBaseline."
+      "detail": "The lobby season card renders 'TEMPORADA TERMINADA' at roughly 2.2x the pixel width of the English 'SEASON ENDED', running the full width of the card so that its final A is clipped by the card border. Confirmed against the English baseline on 2026-08-18: EN occupies about the left 40% of the card and stops well clear of the art. German 'SAISON BEENDET' fits comfortably, so this is specific to the pt-BR string length.",
+      "teaches": "Proven by comparing the English and pt-BR captures of the same card. See techniques.englishBaseline.",
+      "$correction": "The 2026-08-11 note put the pt-BR string at '~73% wider' than English. Measured against the English baseline it is closer to 2.2x, and it is an actual clip on this device rather than merely 'no margin left'. The earlier figure understated it."
     },
     "mixedBrandStrings": {
       "screen": "lobby",
@@ -938,8 +1574,9 @@
       "severity": "high",
       "type": "untranslated",
       "string": "Bundle Store",
-      "detail": "In the Store's category rail every sibling is Portuguese — Destaques, Ofertas, Gemas, Loja Prismática, Loja de Resgate, Código de Criador — and 'Bundle Store' alone is English. It is not a brand name; the neighbouring 'Loja Prismática' and 'Loja de Resgate' prove the pattern is 'Loja de ...'.",
-      "teaches": "A single English item inside an otherwise translated LIST is the strongest possible untranslated signal. Compare each entry against its siblings, not only against the sheet."
+      "detail": "The Store's category rail renders 'Bundle Store' in English while its siblings translate. Confirmed untranslated in pt-BR (beside Destaques, Ofertas, Gemas, Loja Prismática, Loja de Resgate, Código de Criador) AND in German (beside Empfohlen, Angebote, Edelsteine, Laden einlösen, Erstellercode). Because two unrelated languages leave the same entry in English, the key most likely has no translation in ANY locale — file it as a content gap affecting all locales rather than a per-language miss. The screen the entry opens IS correctly localized ('Loja Premium' / 'Premium Store'), so the translation pipeline reaches the destination but not the rail entry.",
+      "teaches": "A single English item inside an otherwise translated LIST is the strongest possible untranslated signal. Compare each entry against its siblings, not only against the sheet.",
+      "$widened": "Was recorded as a pt-BR finding; German confirms it is cross-language."
     },
     "rankedLabelVsTitle": {
       "screen": "lobby, ranked",
@@ -952,6 +1589,210 @@
       ],
       "detail": "The lobby button reads RANQUEADAS; the screen it opens is titled CLASSIFICAÇÃO. May be deliberate (ranked matches vs standings) — confirm against the English pair before reporting as a defect.",
       "teaches": "When a button and its destination title disagree, capture the English pair before calling it a defect: the source may make the same distinction."
+    },
+    "rewardsColumnWordBreak": {
+      "screen": "store.bundleDetail",
+      "severity": "high",
+      "type": "overflow",
+      "confirmedIn": [
+        "Portuguese (Brazil)",
+        "German"
+      ],
+      "strings": [
+        "Recompensas",
+        "Belohnungen"
+      ],
+      "detail": "The rewards column header breaks MID-WORD with no hyphen: pt-BR renders 'Recompen' / 'sas', German renders 'Belohnung' / 'en'. English 'Rewards' fits on one line with room to spare, and Japanese 報酬 also fits. The column is sized to the English word, so any language whose translation runs past roughly eight characters breaks. Two of the three localized languages tested fail.",
+      "fix": "Fix the LAYOUT, not either translation — widen the column, allow proper wrapping, or hyphenate. Rewording one language leaves the next one broken.",
+      "teaches": "The exemplar for the englishBaseline technique. 'Recompensas is too long' is arguable alone; the English/target PAIR showing one word fitting and the other splitting mid-word is not. Capture both before filing an overflow."
+    },
+    "storeVerbSenseGerman": {
+      "screen": "lobby",
+      "severity": "high",
+      "type": "mistranslation",
+      "confirmedIn": [
+        "German"
+      ],
+      "string": "SPEICHERN",
+      "detail": "The German lobby's shop button reads SPEICHERN — the verb 'to save (data)'. It opens the in-game shop. The English source 'Store' is a noun and has been translated in the wrong sense. Expected SHOP or LADEN. German already renders Store as 'Laden' elsewhere in the build ('Laden einlösen'), so the correct sense exists and this call site picked the wrong one. Japanese renders the same key correctly as 店, which confirms the key itself is sound.",
+      "teaches": "Short ambiguous English UI words are the highest-yield audit targets in every language. See checkHints.ambiguousControlWords."
+    },
+    "holdSenseJapanese": {
+      "screen": "settings.general",
+      "severity": "medium",
+      "type": "mistranslation",
+      "confirmedIn": [
+        "Japanese"
+      ],
+      "string": "所有",
+      "detail": "The ADS Mode control offers タップ / 所有 / HYBRID. 所有 means 'to own / possess'; the English source option is 'Hold' in the press-and-hold sense. Expected 長押し. The same wrong option appears on Quick Chat. Separately, HYBRID is left untranslated beside two translated siblings.",
+      "teaches": "Same class as storeVerbSenseGerman — a one-word English control label with two senses, translated in the wrong one."
+    },
+    "dayCounterOrderJapanese": {
+      "screen": "dailyLoginRewards",
+      "severity": "high",
+      "type": "placeholder_order",
+      "confirmedIn": [
+        "Japanese"
+      ],
+      "strings": [
+        "日目4",
+        "日目5",
+        "日目6",
+        "日目7"
+      ],
+      "detail": "The daily-login tiles render 日目4 where correct Japanese is 4日目 — the numeral PRECEDES the counter suffix 日目. The build concatenates '<label><n>' in English 'Day 4' order and the Japanese translation supplied 日目 as though it were a prefix label. Ungrammatical, and it repeats on all seven tiles.",
+      "fix": "Use a positional placeholder ('{n}日目'). No wording change can fix a hardcoded concatenation order.",
+      "teaches": "Concatenated templates that read fine in English break where the affix follows the number. Any screen rendering '<word><number>' is worth checking in Japanese, Korean and Chinese."
+    },
+    "missionTemplateComposition": {
+      "screen": "missions.daily",
+      "severity": "medium",
+      "type": "template_composition",
+      "confirmedIn": [
+        "Portuguese (Brazil)"
+      ],
+      "string": "Obtenha 1 tiros na cabeça em uma partida em Battle Royale",
+      "detail": "Two prepositional phrases are concatenated into one sentence — 'in a match' plus 'in Battle Royale' — giving 'em uma partida em Battle Royale'. The sibling row on the same screen shows the clean form, 'Obtenha 2 tiros na cabeça em Battle Royale'. Distinct from the pluralisation defect on the same row and independently fixable.",
+      "teaches": "One row can carry two unrelated defects. Do not stop reading a string once the first problem is found."
+    },
+    "claimChipOverflowGerman": {
+      "screen": "lobby",
+      "severity": "medium",
+      "type": "overflow",
+      "confirmedIn": [
+        "German"
+      ],
+      "string": "BEANSPRUCHEN",
+      "detail": "The lobby claim chip renders BEANSPRUCHEN wider than its yellow background plate: the leading B and the trailing EN sit outside the plate on both sides. The chip is sized for the English CLAIM and the pt-BR RESGATAR.",
+      "teaches": "Text escaping its own background plate reads as broken even when nothing is clipped. Check the plate, not only the container."
+    },
+    "aboutTabGerman": {
+      "screen": "settings",
+      "severity": "medium",
+      "type": "mistranslation",
+      "confirmedIn": [
+        "German"
+      ],
+      "string": "Um",
+      "detail": "The Settings rail's About tab renders 'Um', a preposition meaning 'around/at'. Expected 'Über'. Its siblings are all correct (Allgemein, Bedienelemente, Spielablauf, Empfindlichkeit, Grafik, Audio, Konto), so this is an isolated wrong-part-of-speech translation on a top-level navigation label.",
+      "teaches": "Standalone navigation labels must be noun forms. The Japanese General tab has the same problem — see generalTabJapanese."
+    },
+    "generalTabJapanese": {
+      "screen": "settings",
+      "severity": "medium",
+      "type": "grammar",
+      "confirmedIn": [
+        "Japanese"
+      ],
+      "string": "一般的な",
+      "detail": "The Settings rail's General tab renders 一般的な, the ADJECTIVAL form, which is grammatically incomplete standing alone and wants a following noun. Expected 一般 or 全般.",
+      "teaches": "Same class as the German 'Um': a machine translation choosing the wrong part of speech for a standalone nav label."
+    },
+    "redemptionSortChipOverflow": {
+      "screen": "store.redemption",
+      "severity": "medium",
+      "type": "overflow",
+      "confirmedIn": [
+        "Portuguese (Brazil)"
+      ],
+      "string": "RARIDADE [DO MAIS RARO PARA O MAIS COMUM]",
+      "detail": "The sort chip wraps to two lines and the second line escapes its single-line container. English 'RARITY [HIGH TO LOW]' fits on one line with room to spare; German 'SELTENHEIT [HOCH ZU NIEDRIG]' fits but only just, chevron nearly touching the text. Both dropdown options wrap the same way in pt-BR.",
+      "fix": "Either shorten the pt-BR string (MAIOR PARA MENOR / MENOR PARA MAIOR) or make the chip wrap-tolerant. The chip is tight in every language, so the layout fix is the durable one.",
+      "teaches": "A control that merely looks tight in one language is often already broken in a more verbose one. Measure all three before deciding whether to fix the string or the box."
+    },
+    "bundleStoreNaming": {
+      "screen": "store.bundleStore",
+      "severity": "medium",
+      "type": "terminology_inconsistency",
+      "confirmedIn": [
+        "English",
+        "Portuguese (Brazil)",
+        "German",
+        "Japanese"
+      ],
+      "strings": [
+        "Bundle Store",
+        "PREMIUM STORE",
+        "BUNDLES STORE"
+      ],
+      "detail": "One destination carries three different names two taps apart: the rail entry says 'Bundle Store', the screen it opens is headed 'PREMIUM STORE', and the detail screen behind VIEW is headed 'BUNDLES STORE'. All three differ IN ENGLISH.",
+      "$sourceNotTranslation": "A SOURCE defect; file it against the source, not against any translation. pt-BR 'LOJA PREMIUM' is a correct rendering of 'PREMIUM STORE' — the inconsistency was inherited, not introduced. Established only by capturing the English baseline; without it this would have been mis-filed as a pt-BR terminology bug.",
+      "teaches": "Before filing a terminology inconsistency against a translation, check whether the source makes the same distinction. Several of this build's apparent translation inconsistencies turned out to be source-side."
+    },
+    "untranslatedBundleCluster": {
+      "screen": "store.bundleDetail",
+      "severity": "high",
+      "type": "untranslated",
+      "confirmedIn": [
+        "Portuguese (Brazil)",
+        "German",
+        "Japanese"
+      ],
+      "strings": [
+        "BUNDLES STORE",
+        "BUY FULL PACKAGE",
+        "BUY INDIVIDUAL ITEMS",
+        "20% OFF"
+      ],
+      "detail": "These four render in English under pt-BR, German and Japanese alike, on a screen whose siblings ARE localized (Recompensas / Belohnungen / 報酬, and 'Oferta válida até:' / 'Angebot gültig bis:' / 'オファーの有効期限：'). A contiguous block of the screen is not wired to the translation pipeline.",
+      "$allLocales": "Because three unrelated languages show identical English, these keys have no translation in any locale. File once against the content pipeline, not three times per language.",
+      "teaches": "When the same strings are English in every language tested, stop filing per-language tickets and file the gap."
+    },
+    "dailyLimitOcclusion": {
+      "screen": "lobby",
+      "severity": "medium",
+      "type": "layout",
+      "confirmedIn": [
+        "English",
+        "Portuguese (Brazil)",
+        "German"
+      ],
+      "strings": [
+        "Daily Limit : 1/1",
+        "Limite diário: 1/1",
+        "Tageslimit: 1/1"
+      ],
+      "detail": "On the lobby's daily-pack promo card the trailing character of the counter runs under the gem artwork and is unreadable. The same product's card in store.offers is wider and renders cleanly.",
+      "$notALocalizationDefect": "This reproduces in ENGLISH. It is a source layout bug affecting every language and must NOT be filed against any translation. It was very nearly filed as a pt-BR overflow before the English baseline was captured.",
+      "teaches": "The English baseline is as valuable for the findings it KILLS as for the ones it proves. Two of this session's candidates died here."
+    },
+    "germanOnlyGaps": {
+      "screen": "store.bundleStore, store.bundleDetail, lobby",
+      "severity": "medium",
+      "type": "untranslated",
+      "confirmedIn": [
+        "German"
+      ],
+      "strings": [
+        "Prismatic Store",
+        "Listen to the noise",
+        "Show your LOUD way of life with these items, the pure essence of the loudest fanbase out there!"
+      ],
+      "detail": "Strings pt-BR translates but German leaves in English: the 'Prismatic Store' rail entry (pt-BR has 'Loja Prismática'), the lobby promo carousel card (pt-BR has 'Ouça o barulho'), and the LOUD BUNDLE body copy (pt-BR translates it in full). Japanese also leaves the bundle body copy in English.",
+      "teaches": "Coverage is per-language, not global. A key that another language translates proves the string is localizable, which turns 'maybe intentional' into a definite gap."
+    },
+    "redeemStoreGerman": {
+      "screen": "store.redemption",
+      "severity": "medium",
+      "type": "mistranslation",
+      "confirmedIn": [
+        "German"
+      ],
+      "string": "Laden einlösen",
+      "detail": "The Redeem Store rail entry reads as the imperative 'redeem the store' rather than naming a shop. Its siblings in the same rail are noun phrases (Edelsteine, Angebote, Erstellercode), so it is inconsistent as well as wrong. Expected 'Einlöseladen' or 'Einlösen-Shop'.",
+      "teaches": "Check a rail entry against the grammatical form of its siblings, not only against its own source string."
+    },
+    "loginCountdownLabelPt": {
+      "screen": "missions.loginDaily",
+      "severity": "medium",
+      "type": "mistranslation",
+      "confirmedIn": [
+        "Portuguese (Brazil)"
+      ],
+      "string": "PRÓXIMO A ENTRAR",
+      "detail": "Labels the countdown to the next daily login. It reads as 'next in line to enter', not 'next login in'. Expected 'PRÓXIMO LOGIN EM'. Semantically wrong rather than merely awkward.",
+      "teaches": "Countdown and timer labels are frequently mistranslated because the source is elliptical ('Next login in'); read them against what the number beside them actually counts."
     }
   },
   "checkHints": {
@@ -960,11 +1801,21 @@
     "quotedUiReferences": "Descriptions quote other UI labels, e.g. the ADI SERIES avatar says 'Click \"Customize\"'. The quoted label must match the actual button's text IN THE SAME LOCALE. A description translated while the button it names was not (or the reverse) is a real defect and only shows up if you compare the two.",
     "currencyFollowsRegion": "Prices render as Indian rupees (₹29.00) because the account region is India, while the UI language is Portuguese. That is correct — currency follows the account region, not the language. Do not report a currency/language mismatch as a defect; DO report a currency that does not match the region in the build stamp.",
     "unitSuffixes": "Ability stats render as '90s', '6s', '150%'. Check the separator and unit placement against locale convention rather than assuming the English form is right.",
-    "playerContent": "The lobby carries a live chat line and player names (e.g. 'CrimsonEyE : all', 'InventiveAggressor'). These are user content, never localized, and must not be compared against the sheet."
+    "playerContent": "The lobby carries a live chat line and player names (e.g. 'CrimsonEyE : all', 'InventiveAggressor'). These are user content, never localized, and must not be compared against the sheet.",
+    "ambiguousControlWords": "The highest-yield audit in any language: short English UI words with more than one sense, translated in the wrong one. Two confirmed on this build — German rendered the noun 'Store' as the verb SPEICHERN ('to save'), and Japanese rendered 'Hold' (press and hold) as 所有 ('to own'). Both sit on controls a player uses constantly, and both read as competent translations of a DIFFERENT word, so a spell-check or a length check will never catch them. Words to check every time: Store, Hold, Back, Free, Match, Save, Press, Fire, Round, Skip, Play, Left, Close, Charge, Draw, Scope. Where one language gets such a key right (Japanese 店 for Store) and another gets it wrong, the key is sound and the fault is that one translation.",
+    "standaloneNavLabels": "Navigation labels stand alone with no sentence around them, and machine translation routinely gives them the wrong part of speech. Confirmed twice: German 'Um' for About (a preposition, needs 'Über') and Japanese 一般的な for General (the adjectival form, needs 一般). Check every tab and rail label against the grammatical form its SIBLINGS take — a rail of nouns with one verb phrase in it is the tell, as with German 'Laden einlösen' beside Edelsteine and Erstellercode.",
+    "numberFormatting": "Number formatting follows the account REGION, not the UI language, exactly as currency does — the pt-BR UI renders '₹2,499.00' with comma-thousands and dot-decimal because the account region is India. Do not report that as a pt-BR defect without a product decision (pt-BR convention would be '2.499,00'). What IS reportable without a decision is internal inconsistency: store.gems shows grouped prices ('₹4,999.00') beside ungrouped quantities ('x 12000') on the same screen, and missions render '10000' ungrouped. Flag the inconsistency, not the convention.",
+    "staleLanguageAfterSwitch": "Parts of this build keep rendering the language the app process launched with until it is restarted — Settings labels and localized content alike (see knownIssues.settingsLanguageLeak). Any capture taken after a language change but before a restart will show stale strings that look exactly like untranslated defects. Restart the app after every language change, and treat any 'untranslated' finding gathered without one as unverified.",
+    "baselineKillsFindings": "Capture the source-language baseline for the same screen before filing an overflow, a truncation or a terminology inconsistency. On this build the baseline PROVED two findings (the rewards column word-break, the season banner clip) and KILLED three that looked convincing: the lobby 'Daily Limit : 1/1' occlusion reproduces in English, the blank third row in the redemption sort dropdown appears in English, and the three-way 'Bundle Store / Premium Store / Bundles Store' naming mismatch exists in English. A finding filed against a translation for a defect the source already has is worse than no finding — it sends the wrong team after it.",
+    "cropBeforeCalling": "Read a tight crop of the actual text before calling truncation or clipping. Two candidates on this build looked truncated in a full-screen capture and were not: the redemption item description ('Os velhos tempos estão voltando com muito estilo!') is complete but runs behind the character render with no scrim, and the German claim chip looked like 'EANSPRUCHE' only because a modal was dimming it. Low contrast and occluding artwork imitate truncation at full-screen scale."
   },
   "hazards": {
     "$comment": "States a crawl can put itself into that end or derail the run. Each was hit by hand during recording.",
     "backOnLobbyExits": "Android BACK on the lobby opens the exit-game confirmation (screens.exitConfirm). Hit during recording: a back-press intended to close the Weapons modal fell through to the lobby and opened it, and three subsequent taps landed on the dialog instead of the intended screen. Prefer the in-screen back chevron at [0.035, 0.076] over KEYCODE_BACK, and after any back-press check for the exitConfirm signature before tapping anything else.",
-    "modalSwallowsTaps": "While any modal is open every coordinate from the underlying screen is wrong. After an unexpected modal appears, re-identify the screen from a fresh capture rather than continuing the planned tap sequence."
+    "modalSwallowsTaps": "While any modal is open every coordinate from the underlying screen is wrong. After an unexpected modal appears, re-identify the screen from a fresh capture rather than continuing the planned tap sequence.",
+    "languagePickerReanchors": "The language picker re-anchors its list to the CURRENTLY CHECKED entry a few seconds after it settles. Observed twice on 2026-08-18: the list was fully settled (two identical frames 2s apart), a screenshot was taken, and by the time the tap landed the list had jumped back to the selected language — so the tap selected nothing, or the wrong row. This is a SEPARATE hazard from scroll momentum and it is the real reason the first pass 'selected the wrong language three times'. Working method: swipe, wait ~2s for momentum, capture ONCE, locate the target in that capture, and tap IMMEDIATELY. A long settle loop gives the re-anchor time to fire. Always read the checkbox back before confirming.",
+    "dailyLoginRewardsCoversLobby": "A DAILY LOGIN REWARDS modal covers the lobby after launch and after every language change, and it swallows every lobby coordinate beneath it. It ate three navigation sequences during the 2026-08-18 second pass before it was recognised. Check for screens.dailyLoginRewards (and screens.promoInterstitial) before driving any lobby coordinate, and dismiss with the modal's own close control.",
+    "backIsUnsafeForOverlays": "Do not use Android BACK to clear overlays in this title. BACK on the lobby opens exitConfirm, whose YES kills the app and ends the run. Any generic 'press back a few times to dismiss whatever is in the way' routine WILL eventually quit the game here. Dismiss modals with their own close control (screens.*.autoDismiss) and navigate up with the in-screen chevron at [0.035, 0.076].",
+    "staleLanguageAfterSwitch": "After a language change the app keeps rendering parts of the UI in the language it launched with until it is restarted (see knownIssues.settingsLanguageLeak). A scan that switches language and captures immediately will report stale strings as untranslated defects all over the build. RESTART THE APP AFTER EVERY LANGUAGE CHANGE before capturing anything — this is a correctness requirement, not an optimisation."
   }
 }

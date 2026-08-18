@@ -7,7 +7,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "build:exe": "node build.js"
+    "build:exe": "node build.js",
+    "test": "node test/crawler-route.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0"

@@ -48,6 +48,13 @@ const DEFAULTS = {
   // in the language the sheet column is being checked against.
   routeSetLanguage: true,
 
+  // Keep a copy of every recognised screen when scanning in the source
+  // language, and compare against it when scanning in any other. The pair is
+  // what turns "this label looks too long" into a defect with evidence — and,
+  // just as usefully, what clears a suspect label whose container is equally
+  // broken in the source.
+  englishBaseline: true,
+
   // Android app under test (used to restart when backtracking fails)
   androidPackage: '',
 };

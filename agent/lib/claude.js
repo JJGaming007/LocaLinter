@@ -385,7 +385,145 @@ ${alreadyTried.length ? `Already tried on this screen, skip them: ${alreadyTried
     }
   }
 
-  /** Short natural-language wrap-up over the whole run. */
+  /**
+   * Put the same screen in two languages side by side and report the
+   * differences that matter.
+   *
+   * Everything here rests on one idea: a defect is only the translation's
+   * fault if the source does not have it too. The pair is what makes that
+   * judgeable, so the prompt spends most of its words insisting the comparison
+   * is actually made rather than assumed — including, explicitly, permission
+   * to conclude that nothing is wrong with the translation because the source
+   * is broken in the same way.
+   */
+  async compareToBaseline(baselinePng, targetPng, ctx) {
+    const identical = (ctx.identical || []).slice(0, 40);
+    const message = await this._send(() => this._messages.stream({
+      ...this._common(),
+      model: this.model,
+      max_tokens: 8000,
+      thinking: { type: 'adaptive' },
+      output_config: {
+        effort: this.effort,
+        format: { type: 'json_schema', schema: RESULT_SCHEMA },
+      },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/png', data: baselinePng.toString('base64') } },
+            { type: 'image', source: { type: 'base64', media_type: 'image/png', data: targetPng.toString('base64') } },
+            {
+              type: 'text',
+              text: `These are the same screen — "${ctx.screenName}" — captured twice.
+
+Image 1 is the source language, ${ctx.baselineLanguage}.
+Image 2 is the language under test, ${ctx.targetHeader}.
+
+Report only what the COMPARISON reveals. Anything visible in image 2 alone has already been checked; repeating it here just duplicates findings.
+
+Look for:
+
+1. Text that no longer fits. Find each label in both images and compare how it sits in its container. Report it when the target text is clipped at an edge, breaks mid-word, wraps where the source did not, spills outside its own button or background plate, or runs under artwork that the source clears. Say what the source did and what the target does — "'Rewards' fits on one line, 'Recompensas' breaks mid-word into 'Recompen' / 'sas'" — because that contrast is the evidence.
+
+2. Text that did not change. A string identical to the source is usually untranslated. Ignore brand names, product names, player names and proper nouns, which are meant to stay put.${identical.length ? `\n\nStrings already found to be character-for-character identical: ${identical.map((s) => `"${s}"`).join(', ')}. Judge which are genuinely untranslated and which are names.` : ''}
+
+3. Content that does not correspond — the target saying something the source does not, beyond ordinary translation.
+
+Two things you must NOT report, and they matter as much as what you do:
+
+- A problem that is present in BOTH images. If a counter runs under the same artwork in image 1, if a row is blank in image 1, if a screen has an inconsistent name in image 1, then the source has that defect and the translation did not cause it. Say nothing about it. Filing it against the translation sends the wrong team after it.
+
+- Content that legitimately differs between captures. Carousels, rotating promo slots, countdown timers, live counters and anything showing another player's name will differ for reasons that have nothing to do with language. If a panel's content is simply different rather than a translation of the same thing, it is a different card, not a defect.
+
+If the two images show no translation-caused difference, return an empty issues list. That is a useful and common answer.`,
+            },
+          ],
+        },
+      ],
+    }).finalMessage());
+
+    this._track(message.usage);
+    const text = (message.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    if (!text.trim()) return { issues: [] };
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { issues: [] };
+    }
+  }
+
+  /**
+   * Find one specific string on screen and say where it is.
+   *
+   * Used to pick a row out of a scrolling list — a language in the picker, say
+   * — where there is no fixed coordinate to aim at because the list moves.
+   * Deliberately narrow and cheap: one string in, one point out, so the gap
+   * between looking and tapping stays short. A list that re-anchors itself a
+   * second after it settles punishes anything slower.
+   *
+   * With `requireChecked` it answers a different question — is this row's
+   * checkbox ticked? — which is how a selection is confirmed before something
+   * irreversible is pressed.
+   *
+   * @returns {Promise<{x:number,y:number}|null>} normalized centre, or null.
+   */
+  async locateText(png, needle, { requireChecked = false } = {}) {
+    const message = await this._send(() => this._messages.stream({
+      ...this._common(),
+      model: this.model,
+      max_tokens: 2000,
+      output_config: {
+        format: {
+          type: 'json_schema',
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['found'],
+            properties: {
+              found: { type: 'boolean', description: 'Is the row visible on this screenshot?' },
+              x: { type: 'number', description: 'Horizontal centre of the row, 0 = left edge, 1 = right edge.' },
+              y: { type: 'number', description: 'Vertical centre of the row, 0 = top edge, 1 = bottom edge.' },
+              checked: { type: 'boolean', description: 'Does the row show a ticked checkbox or a selected mark?' },
+            },
+          },
+        },
+      },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/png', data: png.toString('base64') } },
+            {
+              type: 'text',
+              text: `Find the row labelled "${needle}" in this screenshot.
+
+Answer found:false if it is not visible, including when it is only partly visible or cut off at the top or bottom edge — a half-visible row cannot be tapped reliably, and saying it is there when it is not selects the wrong thing.
+
+If it is visible, give the centre of the row as fractions of the image: x 0 is the left edge and 1 the right edge, y 0 is the top and 1 the bottom.${
+                requireChecked
+                  ? '\n\nAlso report whether that row is currently SELECTED — a ticked checkbox, a check mark, or an obvious highlight that the other rows do not have. Be strict: report checked:false if you are unsure.'
+                  : ''
+              }`,
+            },
+          ],
+        },
+      ],
+    }).finalMessage());
+
+    this._track(message.usage);
+    const text = (message.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    try {
+      const p = JSON.parse(text);
+      if (!p.found) return null;
+      if (requireChecked && !p.checked) return null;
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
+      return { x: p.x, y: p.y };
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Distil a finished run into a few lines worth keeping.
    *
