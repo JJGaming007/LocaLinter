@@ -35,6 +35,7 @@
       'ds-filter-severity', 'ds-filter-type', 'ds-filter-text', 'ds-export', 'ds-clear',
       'ds-explain', 'ds-explain-btn', 'ds-explain-out',
       'ds-shot-overlay', 'ds-shot-img', 'ds-shot-caption', 'ds-shot-close', 'badge-device',
+      'ds-blockers', 'ds-blockers-list', 'ds-device-refresh',
     ].forEach((id) => { el[id.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = $(id); });
 
     if (!el.dsAgentStatus) return; // tab not present
@@ -69,17 +70,34 @@
     });
     el.dsPackage.addEventListener('input', syncBuildSelect);
 
+    // Picking a device or a language column is exactly what clears the last
+    // blocker, so both have to re-run the readiness check.
+    el.dsDevice.addEventListener('change', updateStartState);
+    el.dsLanguage.addEventListener('change', updateStartState);
+
     el.dsSheet.addEventListener('change', onSheetChange);
     el.dsRoute.addEventListener('change', renderRouteCard);
 
-    // The agent runs on the user's own machine and is usually not running, so
-    // reaching for it at page load only paints a failure nobody asked about.
-    // Wait until this tab is actually opened, and retry on each open for as
-    // long as there is no connection.
+    if (el.dsDeviceRefresh) el.dsDeviceRefresh.addEventListener('click', refreshDevices);
+
+    // In the web build the agent was a separate process the user had to start,
+    // so contacting it at load only painted a failure nobody had asked about.
+    // In the desktop app it runs inside this very process and is always up, so
+    // waiting meant the status bar claimed the service was stopped and the
+    // device list stayed empty until you happened to open this tab. Connect
+    // once at startup instead; the per-tab retry below still covers a service
+    // that has genuinely fallen over.
+    connectAndLoadRoutes();
+
     document.addEventListener('localinter:tab', (e) => {
-      if (e.detail.tabId !== 'device-scan') return;
+      const here = e.detail.tabId === 'device-scan';
+      setDevicePolling(here);
+      if (!here) return;
       refreshSheets();
       if (!agentOk && !running) connectAndLoadRoutes();
+      // Already connected from an earlier visit: re-check rather than trusting
+      // a device list that may be minutes old.
+      else if (!running) refreshDevices();
     });
     // Loading a sheet anywhere in the app re-points the scan at it.
     document.addEventListener('localinter:sheet', () => {
@@ -96,6 +114,9 @@
 
     onModeChange();
     refreshSheets();
+    if (document.getElementById('tab-device-scan').classList.contains('active')) {
+      setDevicePolling(true);
+    }
   }
 
   /**
@@ -287,8 +308,17 @@
     }
   }
 
+  /**
+   * Devices come and go while the app is open — a cable gets plugged in, the
+   * "allow USB debugging" prompt is finally accepted, adb's daemon takes a
+   * moment to start on the first call. This used to run once, on connect, so
+   * anything that arrived afterwards was never noticed and the dropdown sat on
+   * "No devices found" with no way to retry.
+   */
   async function refreshDevices() {
     if (!agentOk) return;
+    const prev = el.dsDevice.value;
+    if (el.dsDeviceRefresh) el.dsDeviceRefresh.classList.add('is-busy');
     try {
       const { devices, error } = await api('/api/devices');
       el.dsDevice.innerHTML = '';
@@ -302,11 +332,37 @@
           if (d.state !== 'device') opt.disabled = true;
           el.dsDevice.appendChild(opt);
         }
+        // Re-selecting what was chosen keeps a poll from stealing the choice.
+        if (prev && [...el.dsDevice.options].some((o) => o.value === prev && !o.disabled)) {
+          el.dsDevice.value = prev;
+        } else {
+          const first = [...el.dsDevice.options].find((o) => o.value && !o.disabled);
+          if (first) el.dsDevice.value = first.value;
+        }
       }
     } catch (e) {
       el.dsDevice.innerHTML = `<option value="">${escapeHtml(e.message)}</option>`;
+    } finally {
+      if (el.dsDeviceRefresh) el.dsDeviceRefresh.classList.remove('is-busy');
     }
     updateStartState();
+  }
+
+  /**
+   * Poll only while the Device scan tab is actually on screen and no scan is
+   * running — often enough that plugging a cable in feels instant, cheap
+   * enough that it costs nothing when the tab is closed.
+   */
+  let devicePollTimer = null;
+  function setDevicePolling(on) {
+    if (on && !devicePollTimer) {
+      devicePollTimer = setInterval(() => {
+        if (agentOk && !running && el.dsMode.value === 'device' && !document.hidden) refreshDevices();
+      }, 3000);
+    } else if (!on && devicePollTimer) {
+      clearInterval(devicePollTimer);
+      devicePollTimer = null;
+    }
   }
 
   function onModeChange() {
@@ -471,15 +527,43 @@
     updateStartState();
   }
 
+  /**
+   * Start has five independent preconditions. Disabling the button on its own
+   * left you guessing which one you had missed, so the same check now produces
+   * the list of what is still outstanding and shows it above the button.
+   */
+  function missingForStart() {
+    const missing = [];
+    if (!agentOk) missing.push('The scanning service to be running — it starts with the app; try “Test connection”.');
+    if (!(agentConfig && agentConfig.apiKeySet)) missing.push('An Anthropic API key — add one in step 1 above.');
+    if (!sheet()) missing.push('A sheet to compare against — open one from the sidebar, or pick a different sheet above.');
+    else if (!el.dsLanguage.value) missing.push('A language column to check — pick one under “Language column”.');
+    if (el.dsMode.value === 'device' && !el.dsDevice.value) {
+      missing.push('An Android device connected over USB with USB debugging turned on.');
+    }
+    return missing;
+  }
+
   function updateStartState() {
-    const ready =
-      agentOk &&
-      !!sheet() &&
-      !!el.dsLanguage.value &&
-      (agentConfig ? agentConfig.apiKeySet : false) &&
-      !running &&
-      (el.dsMode.value !== 'device' || !!el.dsDevice.value);
-    el.dsStart.disabled = !ready;
+    const missing = missingForStart();
+    el.dsStart.disabled = running || missing.length > 0;
+
+    if (!el.dsBlockers) return;
+    // While a scan is running the button is disabled for an obvious reason,
+    // so the checklist would only be noise.
+    if (running || !missing.length) {
+      el.dsBlockers.classList.add('hidden');
+      el.dsStart.removeAttribute('title');
+      return;
+    }
+    el.dsBlockersList.innerHTML = '';
+    missing.forEach((text) => {
+      const li = document.createElement('li');
+      li.textContent = text;
+      el.dsBlockersList.appendChild(li);
+    });
+    el.dsBlockers.classList.remove('hidden');
+    el.dsStart.title = `Not ready yet — ${missing.length} thing${missing.length > 1 ? 's' : ''} still needed.`;
   }
 
   function options() {

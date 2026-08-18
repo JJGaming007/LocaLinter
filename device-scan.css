@@ -34,6 +34,58 @@
   color: var(--faint);
 }
 
+/* The tab is a sequence — connect, configure, run, read — so the panels are
+   numbered. Without it the two setup panels read as two unrelated forms. */
+.ds-panel-head h3 { display: flex; align-items: center; gap: 0.5rem; }
+.ds-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 99px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-line);
+  color: var(--accent-hi);
+  font-size: 0.62rem;
+  letter-spacing: 0;
+}
+
+/* One plain sentence about what this tab does, before any of the controls. */
+.ds-intro {
+  font-size: 0.82rem;
+  color: var(--text-2);
+  line-height: 1.7;
+  max-width: 78ch;
+}
+
+/* Why "Start scan" is greyed out. */
+.ds-blockers {
+  margin: 0.9rem 0 0;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border-strong);
+  border-left: 2px solid var(--warning);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+}
+.ds-blockers-title {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--warning);
+  margin-bottom: 0.4rem;
+}
+.ds-blockers ul { margin: 0; padding-left: 1.05rem; }
+.ds-blockers li {
+  font-size: 0.78rem;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+.ds-blockers li::marker { color: var(--faint); }
+
 .ds-status {
   font-family: var(--mono);
   font-size: 0.66rem;
@@ -194,7 +246,7 @@
 }
 .ds-stats .stat-pill.success {
   color: var(--success);
-  border-color: rgba(116, 160, 106, 0.32);
+  border-color: var(--accent-success-line);
   border-left-color: var(--success);
 }
 
@@ -605,3 +657,69 @@
 }
 .ds-explain-table td { padding: 0.3rem 0.5rem 0.3rem 0; color: var(--text-2); border-bottom: 1px solid var(--border); vertical-align: top; }
 .ds-explain-table tr:last-child td { border-bottom: none; }
+
+/* ============================================================
+   PAPER & CORAL — DEVICE SCAN
+   ============================================================ */
+.ds-panel {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-card);
+  padding: 1.15rem 1.25rem;
+}
+.ds-panel-head h3 {
+  font-family: var(--font);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  color: var(--text-dim);
+}
+.ds-step {
+  width: 18px;
+  height: 18px;
+  background: var(--accent-primary-soft);
+  border: 1px solid var(--accent-primary-line);
+  color: var(--accent-primary);
+  font-size: 0.63rem;
+  font-weight: 700;
+}
+.ds-status {
+  font-family: var(--font);
+  font-size: 0.68rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 0.18rem 0.6rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  color: var(--text-muted);
+}
+.ds-status.ok { color: var(--accent-success); border-color: var(--accent-success-line); background: var(--accent-success-soft); }
+.ds-status.bad { color: var(--accent-error); border-color: var(--accent-error-line); background: var(--accent-error-soft); }
+.ds-status.warn { color: var(--accent-warning); border-color: var(--border-strong); background: var(--accent-warning-soft); }
+.ds-status.pending { color: var(--accent-primary); border-color: var(--accent-primary-line); background: var(--accent-primary-soft); }
+
+.ds-intro { color: var(--text-muted); }
+.ds-hint { color: var(--text-muted); }
+.ds-field > label {
+  font-family: var(--font);
+  font-size: 0.63rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  color: var(--text-dim);
+}
+
+.ds-blockers {
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--accent-warning);
+  border-radius: var(--r-sm);
+  background: var(--accent-warning-soft);
+}
+.ds-blockers-title { font-family: var(--font); color: var(--accent-warning); font-weight: 700; }
+.ds-blockers li { color: var(--text-secondary); }
+
+/* Device picker + its retry button share one row. */
+.ds-device-row { display: flex; align-items: center; gap: 0.4rem; }
+.ds-device-row select { flex: 1 1 auto; min-width: 0; }
+.ds-device-row .btn { flex: 0 0 auto; }
+#ds-device-refresh.is-busy svg { animation: spin 0.8s linear infinite; }

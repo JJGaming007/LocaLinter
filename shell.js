@@ -35,7 +35,10 @@
     },
   };
 
-  const COLLAPSE_KEY = 'locaLinterSidebarCollapsed';
+  const THEME_KEY = 'locaLinterTheme';
+
+  // wireHelp installs the real one.
+  let openHelp = () => {};
 
   document.addEventListener('DOMContentLoaded', init);
 
@@ -43,8 +46,9 @@
     wireSidebar();
     wirePresetSelect();
     wireSheetMirror();
-    wireSheetPicker();
     wireAgentStatus();
+    wireTheme();
+    wireHelp();
     wireShortcuts();
 
     document.addEventListener('localinter:tab', (e) => setView(e.detail.tabId));
@@ -68,20 +72,13 @@
 
   /* ── sidebar ─────────────────────────────────────────────── */
 
+  /**
+   * The sidebar is one fixed width and never collapses — an icon-only rail
+   * hid every label and left the brand mark shifting around in the gap. On a
+   * narrow window it becomes a drawer instead, which is the only mode where
+   * hiding it is worth anything.
+   */
   function wireSidebar() {
-    if (localStorage.getItem(COLLAPSE_KEY) === '1') {
-      document.body.classList.add('sb-collapsed');
-    }
-
-    $('sidebar-toggle').addEventListener('click', () => {
-      if (window.matchMedia('(max-width: 860px)').matches) {
-        document.body.classList.remove('sb-open');
-        return;
-      }
-      const collapsed = document.body.classList.toggle('sb-collapsed');
-      localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0');
-    });
-
     $('sidebar-open').addEventListener('click', () => {
       document.body.classList.toggle('sb-open');
     });
@@ -98,49 +95,93 @@
     });
   }
 
+  /* ── sheet source ────────────────────────────────────────── */
+
   /**
-   * With a sheet loaded the source panel collapses to a one-line bar, which
-   * used to leave the full picker reachable only from the Home tab. This
-   * re-opens it in place, so opening a different sheet no longer means
-   * navigating away from your results.
+   * The dropdown is the single place a sheet is chosen, so it has to be honest
+   * about what is open — including sheets it did not open itself (a restore
+   * from the local cache, a pasted URL, a drag-and-drop). It therefore never
+   * holds a stale choice: every load re-syncs it from what is actually loaded.
    */
-  function wireSheetPicker() {
-    const buttons = [$('change-sheet-btn'), $('toolbar-change-btn')].filter(Boolean);
-    const picker = $('drop-content-idle');
-    if (!buttons.length || !picker) return;
-
-    const setOpen = (open) => {
-      document.body.classList.toggle('picker-open', open);
-      buttons.forEach((b) => {
-        b.classList.toggle('is-open', open);
-        b.setAttribute('aria-expanded', String(open));
-      });
-    };
-
-    buttons.forEach((b) => b.addEventListener('click', () => {
-      setOpen(!document.body.classList.contains('picker-open'));
-    }));
-
-    // Loading a sheet is the point of the picker, so it closes itself.
-    document.addEventListener('localinter:sheet', () => setOpen(false));
-    document.querySelectorAll('.quick-open-btn').forEach((b) => {
-      b.addEventListener('click', () => setOpen(false));
-    });
-  }
+  let sheetLoading = false;
 
   function wirePresetSelect() {
     const select = $('sb-preset');
+
     select.addEventListener('change', () => {
-      const preset = select.value;
-      if (!preset) return;
-      const btn = document.querySelector(`.quick-open-btn[data-preset="${preset}"]`);
-      if (btn) btn.click();
+      const choice = select.value;
+
+      if (choice === '__local__') {
+        // The dialog is cancellable and gives no callback when dismissed, so
+        // the select must not be left showing an action that may not happen.
+        syncPresetSelect();
+        $('file-input').click();
+        return;
+      }
+      if (!choice) return;                       // the placeholder is not a choice
+      loadPreset(choice);
     });
 
-    document.querySelectorAll('.quick-open-btn').forEach((btn) => {
-      btn.addEventListener('click', () => { select.value = btn.dataset.preset || ''; });
-    });
+    // Every load — preset, URL, file, restore — ends here.
+    document.addEventListener('localinter:sheet', syncPresetSelect);
+    syncPresetSelect();
   }
+
+  /**
+   * One load at a time. Two quick choices used to race, and whichever fetch
+   * happened to finish last won — which is not necessarily the one clicked
+   * last, so you could end up on a sheet you did not pick.
+   */
+  function loadPreset(key) {
+    if (sheetLoading) return;
+    const api = window.LocaLinter;
+    if (!api || !api.loadPreset) return;
+
+    const label = labelForKey(key);
+    setSheetLoading(true, label);
+
+    // loadFromSheetUrl reports its own failures and resolves either way, so
+    // rather than trust the outcome, re-read what is actually loaded.
+    Promise.resolve(api.loadPreset(key))
+      .catch(() => {})
+      .finally(() => {
+        setSheetLoading(false);
+        syncPresetSelect();
+      });
+  }
+
+  function labelForKey(key) {
+    const opt = $('sb-preset').querySelector(`option[value="${key}"]`);
+    return opt ? opt.textContent : key;
+  }
+
+  function setSheetLoading(on, label) {
+    sheetLoading = on;
+    $('sb-preset').disabled = on;
+    $('sb-sheet').classList.toggle('is-loading', on);
+    if (on) $('sb-sheet-name').textContent = `Loading ${label}…`;
+  }
+
+  /** Point the dropdown at whatever is genuinely open. */
+  function syncPresetSelect() {
+    if (sheetLoading) return;
+    const select = $('sb-preset');
+    const api = window.LocaLinter;
+    const key = api && api.getCurrentPresetKey ? api.getCurrentPresetKey() : null;
+
+    if (key) {
+      select.value = key;
+      return;
+    }
+    // Not one of the environments: name it in the hidden placeholder so the
+    // control still reads as "this is what is open" rather than going blank.
+    const loaded = $('loaded-content');
+    const hasSheet = loaded && !loaded.classList.contains('hidden');
+    const name = $('loaded-file-name').textContent.trim().replace(/^Loaded:\s*/i, '');
+    $('sb-preset-placeholder').textContent = hasSheet && name ? name : 'No sheet loaded';
+    select.value = '';
+  }
+
 
   /* ── sheet identity in the chrome ────────────────────────── */
 
@@ -160,6 +201,13 @@
 
       const rows = scanned ? scanned.textContent.replace(/[^\d,]/g, '') : '';
       $('topbar-meta').textContent = hasFile && rows ? `${rows} rows` : '';
+
+      // The name is already in the breadcrumb and the sidebar, so the status
+      // bar carries only what neither of them shows: how big the sheet is.
+      $('sbar-sheet-dot').classList.toggle('on', hasFile);
+      $('sbar-counts').textContent = hasFile
+        ? (rows ? `${rows} rows` : 'Sheet loaded')
+        : 'No sheet loaded';
     };
 
     new MutationObserver(sync).observe(loaded, {
@@ -212,6 +260,87 @@
   }
 
 
+  /* ── theme ───────────────────────────────────────────────── */
+
+  /**
+   * Light is the default: this is a document tool used in daylight, and the
+   * paper ground is what the palette was drawn for. The choice is remembered,
+   * and the Windows title-bar strip is repainted to match — it belongs to the
+   * main process, so preload.js carries the colours across.
+   */
+  const TITLEBAR = {
+    light: { color: '#ffffff', symbolColor: '#6b6a64' },
+    dark: { color: '#161412', symbolColor: '#ada89f' },
+  };
+
+  function wireTheme() {
+    const btn = $('theme-toggle');
+    const label = $('theme-toggle-text');
+
+    const apply = (theme) => {
+      document.documentElement.setAttribute('data-theme', theme);
+      if (label) label.textContent = theme === 'dark' ? 'Light mode' : 'Dark mode';
+      if (btn) btn.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+      if (window.localinterShell && window.localinterShell.setTitleBarTheme) {
+        window.localinterShell.setTitleBarTheme(TITLEBAR[theme]);
+      }
+    };
+
+    const stored = localStorage.getItem(THEME_KEY);
+    apply(stored === 'dark' || stored === 'light' ? stored : 'light');
+
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      localStorage.setItem(THEME_KEY, next);
+      apply(next);
+      closeAccountMenu();
+    });
+  }
+
+  /** main.js owns the flyout; this only dismisses it after an action. */
+  function closeAccountMenu() {
+    const menu = $('account-menu');
+    const btn = $('account-btn');
+    if (menu) menu.classList.add('hidden');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  }
+
+  /* ── help ────────────────────────────────────────────────── */
+
+  /**
+   * Shares the settings modal's overlay so only one dimmer ever exists, but
+   * owns its own open/close so main.js's Escape handler cannot half-close it.
+   */
+  function wireHelp() {
+    const modal = $('help-modal');
+    const overlay = $('modal-overlay');
+    if (!modal || !overlay) return;
+
+    openHelp = () => {
+      $('settings-modal').classList.add('hidden');
+      modal.classList.remove('hidden');
+      overlay.classList.remove('hidden');
+      $('help-close').focus();
+    };
+    const close = () => {
+      modal.classList.add('hidden');
+      // Settings may not have been what opened the overlay; hide it either way.
+      if ($('settings-modal').classList.contains('hidden')) overlay.classList.add('hidden');
+    };
+
+    $('help-btn').addEventListener('click', openHelp);
+    // Settings now lives in the account flyout; it opens the same modal as the
+    // toolbar gear, and closes the flyout behind it.
+    $('sb-settings').addEventListener('click', () => {
+      closeAccountMenu();
+      $('global-settings-btn').click();
+    });
+    $('help-close').addEventListener('click', close);
+    overlay.addEventListener('click', close);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  }
+
   /* ── shortcuts ───────────────────────────────────────────── */
 
   function wireShortcuts() {
@@ -222,6 +351,10 @@
       if (e.key === 't' || e.key === 'T') {
         e.preventDefault();
         $('qt-toggle').click();
+      }
+      if (e.key === '?') {
+        e.preventDefault();
+        openHelp();
       }
     });
   }

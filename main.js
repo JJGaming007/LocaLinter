@@ -38,7 +38,6 @@ window.addEventListener('DOMContentLoaded', () => {
   const searchTbody = document.getElementById('search-tbody');
   const searchPagination = document.getElementById('searchPagination');
   
-  const globalWrapChk = document.getElementById('global-wrap');
   const formatTableWrap = document.getElementById('format-table-wrap');
   const missingTableWrap = document.getElementById('missing-table-wrap');
   const formatSummary = document.getElementById('format-summary');
@@ -910,6 +909,10 @@ window.addEventListener('DOMContentLoaded', () => {
       showToast('Invalid Google Sheets URL.', 'error');
       return;
     }
+    if (!beginSheetLoad()) {
+      showToast('Already loading a sheet — one moment.');
+      return;
+    }
     try {
       setLoadBtnLoading(true);
       showToast('Fetching sheet from Google…');
@@ -935,10 +938,11 @@ window.addEventListener('DOMContentLoaded', () => {
       showToast(e.message || 'Failed to load sheet.', 'error');
     } finally {
       setLoadBtnLoading(false);
+      endSheetLoad();
     }
   }
 
-  async function refreshCurrentSheet() {
+  async function refreshCurrentSheet({ silent = false } = {}) {
     if (!currentSheetRef) return;
     try {
       refreshSheetBtn.disabled = true;
@@ -961,7 +965,7 @@ window.addEventListener('DOMContentLoaded', () => {
       initSearchTab(currentRows);
       linkedSheetCache.delete(currentSheetRef.spreadsheetId);
       updateLinkSyncUI();
-      showToast('Sheet refreshed.');
+      if (!silent) showToast('Sheet refreshed.');
     } catch (e) {
       showToast(e.message || 'Failed to refresh.', 'error');
     } finally {
@@ -1005,6 +1009,21 @@ window.addEventListener('DOMContentLoaded', () => {
       loadFromSheetUrl(`https://docs.google.com/spreadsheets/d/${preset.id}/edit?gid=0#gid=0`);
     });
   });
+
+  // One fetch at a time, whichever control started it. Two overlapping loads
+  // resolve in completion order rather than click order, so the sheet you end
+  // up on is not necessarily the one you asked for last.
+  let sheetLoadInFlight = false;
+  function beginSheetLoad() {
+    if (sheetLoadInFlight) return false;
+    sheetLoadInFlight = true;
+    document.querySelectorAll('.quick-open-btn, #gsheet-load-btn').forEach(b => { b.disabled = true; });
+    return true;
+  }
+  function endSheetLoad() {
+    sheetLoadInFlight = false;
+    document.querySelectorAll('.quick-open-btn, #gsheet-load-btn').forEach(b => { b.disabled = false; });
+  }
 
   // ── Linked-sheet edit propagation ──
   const linkedSheetCache = new Map(); // spreadsheetId -> { sheetTitle, headerRow, keyToRowNum }
@@ -1237,17 +1256,22 @@ window.addEventListener('DOMContentLoaded', () => {
     currentSheetRef = data.sheetRef || null;
     showLoadedState(currentFileName);
 
-    const willAutoRefresh = currentSheetRef && loadStoredToken();
-    if (!willAutoRefresh) {
-      validateData(currentRows);
-      initSearchTab(currentRows);
-    }
+    // Always validate the cached rows first. Validation used to be skipped
+    // whenever an auto-refresh was going to run, on the assumption the refresh
+    // would do it — so any failed refresh (expired token, no network, an empty
+    // response) left a named sheet on screen with no results, no counts and
+    // nothing but a toast that had already faded. The refresh is an upgrade,
+    // never a prerequisite: you get the cached sheet immediately, and fresher
+    // numbers a moment later if the network agrees.
+    validateData(currentRows);
+    initSearchTab(currentRows);
+
     if (currentSheetRef) {
       refreshSheetBtn.classList.remove('hidden');
-      if (willAutoRefresh) {
-        // Yield two frames so the spinner animation kicks off on the
-        // compositor before validateData blocks the main thread.
-        requestAnimationFrame(() => requestAnimationFrame(() => refreshCurrentSheet()));
+      if (loadStoredToken()) {
+        // Yield two frames so the spinner reaches the compositor before the
+        // refresh's own validate pass blocks the main thread.
+        requestAnimationFrame(() => requestAnimationFrame(() => refreshCurrentSheet({ silent: true })));
       }
     }
 
@@ -1658,9 +1682,12 @@ window.addEventListener('DOMContentLoaded', () => {
     renderFormatPage(formatIssues, isFiltered);
     renderMissingPage(missingIssues, isFiltered);
 
+    const breakdown = document.getElementById('stat-issues-breakdown');
+
     if (totalIssues === 0) {
       statIssuesContainer.className = 'stat-pill success';
       statIssues.textContent = 'None';
+      if (breakdown) breakdown.textContent = 'Nothing to fix in this sheet';
       return;
     }
 
@@ -1670,6 +1697,12 @@ window.addEventListener('DOMContentLoaded', () => {
       issuesText += ` · ${(formatIssues.length + missingIssues.length).toLocaleString()} in ${langFilter.value}`;
     }
     statIssues.textContent = issuesText;
+    // Spelling out the split is what stops the pill reading as a contradiction
+    // of the count on the tab you are looking at.
+    if (breakdown) {
+      breakdown.textContent =
+        `${totalFormat.toLocaleString()} format · ${totalMissing.toLocaleString()} missing`;
+    }
   }
 
   function getLangCodeForName(langName) {
@@ -1776,9 +1809,9 @@ window.addEventListener('DOMContentLoaded', () => {
       srch.caseSensitive = sCaseChk.checked;
     }
 
-    // Wrap is one setting across all three tables, so re-apply the global one
-    // here rather than a per-tab key that nothing writes any more.
-    setWrap(localStorage.getItem('locaLinterGlobalWrap') !== 'false');
+    // Search owns its own wrap setting now; re-apply it when the sheet loads,
+    // because the table wrapper is rebuilt along with the results.
+    setSearchWrap(localStorage.getItem('locaLinterSearchWrap') !== 'false');
 
     srch.rows = buildFlatRows(rows, headers);
 
@@ -2201,27 +2234,32 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   window.locaLinterSetBadge = setBadge;   // device-scan.js owns its own badge
 
-  function setWrap(enabled) {
-    if (globalWrapChk) globalWrapChk.checked = enabled;
-    const tbWrap = document.getElementById('toolbar-wrap');
-    if (tbWrap) tbWrap.checked = enabled;
+  /**
+   * Format issues and Missing locales are always wrapped.
+   *
+   * Unwrapped, auto table layout sizes the key column to the longest key in the
+   * sheet — and these keys are whole sentences — so the first column alone runs
+   * past the window and pushes language, issue and snippet off the right edge.
+   * There is no reading of that table worth offering, so the global toggle that
+   * used to sit in the toolbar is gone and these two are simply always on.
+   */
+  [formatTableWrap, missingTableWrap].forEach(el => {
+    if (el) el.classList.add('wrap-text');
+  });
+
+  /**
+   * Search keeps a wrap control, because there it is genuinely a choice: you
+   * are usually scanning many short values and the compact one-line view is
+   * easier to skim. It is scoped to the search table alone — it used to drive
+   * all three, so turning it off here quietly broke the other two tabs.
+   */
+  function setSearchWrap(enabled) {
     if (sWrapChk) sWrapChk.checked = enabled;
-    [formatTableWrap, missingTableWrap, searchTableWrap].forEach(el => {
-      if (el) el.classList.toggle('wrap-text', enabled);
-    });
-    localStorage.setItem('locaLinterGlobalWrap', enabled);
+    if (searchTableWrap) searchTableWrap.classList.toggle('wrap-text', enabled);
+    localStorage.setItem('locaLinterSearchWrap', enabled);
   }
-
-  // Wrap is reachable from the toolbar as well as the filter row; both are the
-  // same setting, so each has to follow the other.
-  const toolbarWrapChk = document.getElementById('toolbar-wrap');
-  if (toolbarWrapChk) toolbarWrapChk.addEventListener('change', () => setWrap(toolbarWrapChk.checked));
-  if (globalWrapChk) globalWrapChk.addEventListener('change', () => setWrap(globalWrapChk.checked));
-  if (sWrapChk) sWrapChk.addEventListener('change', () => setWrap(sWrapChk.checked));
-
-  // Initialize wrap state from localStorage (default true if not set)
-  const savedWrap = localStorage.getItem('locaLinterGlobalWrap') !== 'false';
-  setWrap(savedWrap);
+  if (sWrapChk) sWrapChk.addEventListener('change', () => setSearchWrap(sWrapChk.checked));
+  setSearchWrap(localStorage.getItem('locaLinterSearchWrap') !== 'false');
 
   // Double-click to copy for all result tables
   [resultsBody, missingBody, searchTbody].forEach(tbody => {

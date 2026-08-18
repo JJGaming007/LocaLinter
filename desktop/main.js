@@ -16,7 +16,7 @@
 
 const path = require('path');
 const http = require('http');
-const { app, BrowserWindow, shell, dialog } = require('electron');
+const { app, BrowserWindow, shell, dialog, ipcMain } = require('electron');
 
 const AGENT_PORT = Number(process.env.PORT || 8790);
 const AGENT_ORIGIN = `http://127.0.0.1:${AGENT_PORT}`;
@@ -31,6 +31,16 @@ const UI_DIR = app.isPackaged
 // it, so a relative require would not resolve. Both paths are derived from
 // UI_DIR instead.
 const AGENT_ENTRY = path.join(UI_DIR, 'agent', 'server.js');
+
+/**
+ * The window icon, and — via setAppUserModelId below — the taskbar one.
+ *
+ * Windows takes the taskbar icon from the window's own icon, but only groups it
+ * under this app (rather than under "Electron") once the App User Model ID is
+ * set, so the two have to be done together.
+ */
+const APP_ID = 'com.supergaming.localinter';
+const ICON_PATH = path.join(UI_DIR, 'assets', 'icon.ico');
 
 /**
  * Config, route maps and run output must land somewhere writable. Inside a
@@ -71,10 +81,11 @@ function createWindow() {
     height: 720,
     minWidth: 860,
     minHeight: 580,
-    backgroundColor: '#0a0a0b',        // matches --bg, so no white flash on open
+    backgroundColor: '#f6f5f1',        // matches --bg-base, so no flash on open
     show: false,
     autoHideMenuBar: true,
     title: 'LocaLinter',
+    icon: ICON_PATH,
     // Frameless with the system's own buttons painted over our title bar: the
     // app owns the whole surface, but minimise/maximise/close still behave and
     // look exactly like every other Windows app.
@@ -84,15 +95,18 @@ function createWindow() {
     // taking the window buttons with it, and leaving a window that never
     // reaches ready-to-show, so it stays hidden and the app looks dead.
     titleBarStyle: 'hidden',
+    // Light is the default theme, so the strip starts light; the renderer
+    // re-sends the real colours as soon as it knows which theme is stored.
     titleBarOverlay: process.platform === 'win32' ? {
-      color: '#0c0c0e',                // --bg-2, the title bar's own ground
-      symbolColor: '#8b877f',          // --muted
-      height: 38,
+      color: '#ffffff',                // --toolbar-bg
+      symbolColor: '#6b6a64',          // --text-muted
+      height: 44,
     } : false,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,          // the UI is still just a web app
       sandbox: true,
+      preload: path.join(__dirname, 'preload.js'),
     },
   });
 
@@ -155,6 +169,10 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
+  // Must be set before the first window is created, or Windows keeps the
+  // default "Electron" identity and shows its icon on the taskbar.
+  if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
+
   app.whenReady().then(async () => {
     try {
       require(AGENT_ENTRY);                // starts listening on AGENT_PORT
@@ -164,6 +182,18 @@ if (!app.requestSingleInstanceLock()) {
       dialog.showErrorBox('LocaLinter could not start', `${e.message}\n\nIs something else already using port ${AGENT_PORT}?`);
       app.quit();
     }
+  });
+
+  // The renderer owns the theme; the title-bar strip belongs to the window.
+  ipcMain.on('titlebar-theme', (_e, colors) => {
+    if (!mainWindow || process.platform !== 'win32' || !colors) return;
+    try {
+      mainWindow.setTitleBarOverlay({
+        color: String(colors.color),
+        symbolColor: String(colors.symbolColor),
+        height: 44,
+      });
+    } catch { /* the window may be closing */ }
   });
 
   app.on('window-all-closed', () => app.quit());

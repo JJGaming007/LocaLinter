@@ -20,6 +20,7 @@
     },
     "files": [
       "main.js",
+      "preload.js",
       "package.json"
     ],
     "extraResources": [
@@ -50,11 +51,18 @@
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "icon": "../assets/icon.ico"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "../assets/icon.ico",
+      "uninstallerIcon": "../assets/icon.ico",
+      "installerHeaderIcon": "../assets/icon.ico",
+      "shortcutName": "LocaLinter",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
     },
     "publish": null
   }
