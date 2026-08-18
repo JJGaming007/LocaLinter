@@ -74,4 +74,73 @@ function packageFor(data, pkg) {
   return hit ? hit[0] : null;
 }
 
-module.exports = { list, get, packageFor, ROUTES_DIR };
+/**
+ * Turn a route map into context for the vision pass.
+ *
+ * A route map is not only coordinates: it is what a person learned by playing
+ * the build with their own hands — which strings this app renders with markup,
+ * which mismatches are already accepted, which defects a human confirmed, and
+ * which states end a run. None of that reached the model before, so every run
+ * re-derived it (or, more often, did not) and reported accepted bugs as new.
+ *
+ * Coordinates are deliberately left out; the crawler acts on those, the model
+ * only needs the judgement.
+ */
+function promptContext(data) {
+  if (!data) return '';
+  const NL = String.fromCharCode(10);
+  const parts = [];
+  const app = data.app || {};
+
+  const section = (heading, entries, render) => {
+    const rows = Object.entries(entries || {}).filter(([k]) => k.charAt(0) !== '$');
+    if (!rows.length) return;
+    parts.push(heading + NL + rows.map(render).join(NL));
+  };
+
+  if (app.name) {
+    const rec = app.recordedOn || {};
+    parts.push(
+      'This app is ' + app.name + (rec.build ? ' (recorded against build ' + rec.build + ')' : '') + '. ' +
+      'A person walked this build by hand and wrote down the following. Treat it as established fact about the app, not as a guess.'
+    );
+  }
+
+  section(
+    'How this app renders text, and what that means for comparing it to the sheet:',
+    data.checkHints,
+    ([k, v]) => '- ' + k + ': ' + v
+  );
+
+  section(
+    'Already known and accepted by the team. Still report these if you see them — they are tagged and collapsed downstream — but do NOT treat them as new discoveries, and never let them crowd out the rest of your findings:',
+    data.knownIssues,
+    ([k, v]) => '- ' + k + ': ' + ((v && v.note) || '')
+  );
+
+  section(
+    'Real defects a human already confirmed in this build. They are genuine and NOT suppressed — if you see them, report them; if you see the same pattern elsewhere, report that too. Each ends with what it teaches about where such bugs hide:',
+    data.knownFindings,
+    ([k, v]) => {
+      const where = v.screen ? ' [' + v.screen + ']' : '';
+      const teaches = v.teaches ? ' — Generalise: ' + v.teaches : '';
+      return '- ' + k + where + ' (' + (v.severity || 'medium') + ', ' + (v.type || 'issue') + '): ' + (v.detail || '') + teaches;
+    }
+  );
+
+  section(
+    'States that can end or derail a run. If a screenshot shows one of these, say so plainly in your notes — it explains why later screens may be missing:',
+    data.hazards,
+    ([k, v]) => '- ' + k + ': ' + v
+  );
+
+  section(
+    'How the text on these screens is reached. If a screenshot looks sparse it is usually because one of these was not done — say so rather than concluding the screen has little text:',
+    data.techniques,
+    ([k, v]) => '- ' + k + ': ' + v
+  );
+
+  return parts.join(NL + NL);
+}
+
+module.exports = { list, get, packageFor, promptContext, ROUTES_DIR };

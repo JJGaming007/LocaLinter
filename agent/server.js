@@ -502,11 +502,18 @@ async function startScan({ run, cfg, sheet, target, mode, serial, route }) {
   // What earlier runs learned about this app, handed to the model as context
   // and to the crawler as hints about what gets in the way.
   const mem = memory.load(cfg.androidPackage);
+  // Two kinds of learned knowledge, and the model needs both: the route map is
+  // what a person worked out by playing the build with their hands, and memory
+  // is what previous automated runs accumulated. Only the second used to be
+  // sent, so every run rediscovered the app's rendering quirks from scratch.
+  const learned = [routeMaps.promptContext(route), memory.promptContext(mem)]
+    .filter(Boolean).join('\n\n');
   const analyzer = new ClaudeAnalyzer({
     apiKey: cfg.apiKey, model: cfg.model, effort: cfg.effort, baseUrl: cfg.baseUrl,
     extraChecks: cfg.extraChecks,
-    memory: memory.promptContext(mem),
+    memory: learned,
   });
+  if (route) run.log(`Loaded the ${route.app && route.app.name ? route.app.name : 'saved'} route map — its screens, probing techniques and known issues are in play.`);
   if (mem.runs) run.log(`Recalling ${mem.runs} previous scan${mem.runs === 1 ? '' : 's'} of ${cfg.androidPackage}.`);
   if (cfg.extraChecks) run.log(`Applying extra checks from the run settings.`);
   if (cfg.baseUrl) run.log(`Model endpoint: ${cfg.baseUrl}`);

@@ -1,6 +1,6 @@
 'use strict';
 
-const { norm, skeleton, extractPlaceholders } = require('./sheet');
+const { norm, skeleton, extractPlaceholders, quotedUiReferences } = require('./sheet');
 
 /**
  * Deterministic, zero-cost checks that run on every captured screen before the
@@ -67,6 +67,36 @@ function runChecks(state, sheet, opts = {}) {
   // Strings sourced from the screenshot (vision mode) have no rect — geometric
   // checks are skipped for those, sheet checks still apply.
   const visible = state.texts.filter((t) => t && t.active !== false);
+
+  /**
+   * A description that names another control must name it as that control is
+   * actually labelled, in this same language.
+   *
+   * Confirmed by hand on Indus: an avatar's lore reads `Click "Customize"`. If
+   * the lore is translated but the button is not — or the button is renamed and
+   * the lore is not — the instruction sends the player hunting for something
+   * that does not exist under that name. It only shows up when the quoted
+   * fragment is compared against the labels on the very same screen, which is
+   * why it runs here rather than per-string.
+   */
+  const onScreenLabels = new Set(
+    visible.map((t) => norm(t.text)).filter((v) => v && v.split(' ').length <= 4)
+  );
+  for (const t of visible) {
+    for (const quoted of quotedUiReferences(t.text)) {
+      const wanted = norm(quoted);
+      if (!wanted || onScreenLabels.has(wanted)) continue;
+      // Only complain when the capture actually read the screen. A near-empty
+      // text list means we saw nothing, not that the reference is broken —
+      // but judge that on everything captured, not just the short labels,
+      // since a screen can legitimately hold one button and a paragraph.
+      if (visible.length < 2 || !onScreenLabels.size) continue;
+      add('ui_reference_mismatch', 'medium', t,
+        `This text tells the player to use "${quoted}", but no control on this screen is labelled that. ` +
+        'Either the instruction or the control was translated without the other.',
+        { quotedReference: quoted });
+    }
+  }
 
   for (const t of visible) {
     const raw = String(t.text == null ? '' : t.text);

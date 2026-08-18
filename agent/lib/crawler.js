@@ -305,6 +305,102 @@ class Crawler {
         });
       }
     }
+
+    out.push(...this.routeGridActions(name, def));
+    out.push(...this.routeRowDetailActions(name, def));
+    return out;
+  }
+
+  /**
+   * Item grids (Inventory, Abilities) put one item's name and description on
+   * screen at a time and swap them when another cell is selected. Screenshotting
+   * such a screen once captures a single item out of dozens, so every cell is
+   * walked deliberately. Recorded by hand: two adjacent avatar cells produced
+   * entirely different names and lore.
+   */
+  routeGridActions(name, def) {
+    const out = [];
+    for (const [gridName, grid] of Object.entries(def.grids || {})) {
+      const cols = Array.isArray(grid.cols) ? grid.cols : [];
+      const rows = Array.isArray(grid.rows) ? grid.rows : [];
+      for (let r = 0; r < rows.length; r++) {
+        for (let c = 0; c < cols.length; c++) {
+          const p = this.routePoint([cols[c], rows[r]]);
+          if (!p) continue;
+          out.push({
+            key: `tap:${name}.${gridName}[${r},${c}]:${Math.round(p.x)},${Math.round(p.y)}`,
+            kind: 'tap', x: p.x, y: p.y,
+            label: `${name} ${gridName} cell r${r + 1}c${c + 1}`,
+            priority: 'high', fromRoute: true, revealsDetail: true,
+          });
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Settings > Gameplay shows a description for the selected row only, in a
+   * panel elsewhere on the screen. Every row has to be selected for its text to
+   * exist anywhere on screen even once.
+   */
+  routeRowDetailActions(name, def) {
+    const rd = def.rowDetails;
+    if (!rd || !Array.isArray(rd.rows)) return [];
+    const out = [];
+    rd.rows.forEach((pair, i) => {
+      const p = this.routePoint(pair);
+      if (!p) return;
+      out.push({
+        key: `tap:${name}.row${i + 1}:${Math.round(p.x)},${Math.round(p.y)}`,
+        kind: 'tap', x: p.x, y: p.y,
+        label: `${name} option row ${i + 1}`,
+        priority: 'high', fromRoute: true, revealsDetail: true,
+      });
+    });
+    return out;
+  }
+
+  /**
+   * Tag findings the team has already accepted instead of hiding them.
+   *
+   * Indus has one long-standing bug — switching the account language leaves a
+   * fixed set of Settings keys rendering in the previous language — that would
+   * otherwise dominate every run's findings. Suppressing the whole Settings
+   * subtree would also bury any genuinely new defect there, so the route map
+   * names the exact strings and they are marked rather than dropped: the list
+   * stays complete, and the UI can collapse them out of the way.
+   */
+  markKnownIssues(issues) {
+    const known = (this.route && this.route.knownIssues) || {};
+    const rules = Object.entries(known)
+      .filter(([k, v]) => !k.startsWith('$') && v && Array.isArray(v.matchAny) && v.mark === 'known')
+      .map(([key, v]) => ({
+        key,
+        note: v.note || '',
+        severity: v.severity || 'low',
+        needles: v.matchAny.map((m) => String(m).trim().toLowerCase()).filter(Boolean),
+      }));
+    if (!rules.length) return issues;
+
+    let tagged = 0;
+    const out = issues.map((issue) => {
+      const hay = String(issue.text || '').trim().toLowerCase();
+      if (!hay) return issue;
+      const hit = rules.find((r) => r.needles.some((n) => hay === n || hay.includes(n)));
+      if (!hit) return issue;
+      tagged += 1;
+      return {
+        ...issue,
+        known: true,
+        knownIssue: hit.key,
+        knownNote: hit.note,
+        severity: hit.severity,
+      };
+    });
+    if (tagged) {
+      this.run.log(`Marked ${tagged} finding${tagged === 1 ? '' : 's'} as a known accepted issue — still listed, but collapsed and dropped to low severity.`);
+    }
     return out;
   }
 
@@ -841,6 +937,7 @@ class Crawler {
     issues = verified;
 
     let deduped = dedupe(issues);
+    deduped = this.markKnownIssues(deduped);
     if (this.mem) {
       const { kept, removed } = memory.filterDismissed(this.mem, deduped);
       if (removed) this.run.log(`Ignored ${removed} finding${removed === 1 ? '' : 's'} you dismissed on an earlier scan.`);

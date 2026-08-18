@@ -74,13 +74,51 @@ function extractPlaceholders(text) {
   return out;
 }
 
+/**
+ * Rich-text tags a game renders as formatting rather than as characters.
+ *
+ * Confirmed on Indus 2.14.0: the Gameplay description draws "Tap" in amber and
+ * the rest in white, i.e. the sheet value carries colour tags that never reach
+ * the screen. Comparing a screenshot's plain text against the tagged sheet
+ * value made every such string look like a mismatch, so the tags come out of
+ * both sides before anything is compared. Only formatting tags are stripped —
+ * a real placeholder like {0} still has to survive, because a missing one is a
+ * genuine defect.
+ */
+const MARKUP_RE = /<\/?(?:color|size|b|i|u|s|sprite|font|align|material|quad|mark|nobr|indent|line-height|cspace|mspace|voffset|width|style|gradient|rotate|link|lowercase|uppercase|smallcaps|sup|sub|alpha|noparse|pos|space)\b[^>]*>/gi;
+
+/** Drop formatting tags, keep everything the player actually reads. */
+function stripMarkup(text) {
+  return String(text == null ? '' : text).replace(MARKUP_RE, '');
+}
+
 /** Aggressive normalization used for exact lookups. */
 function norm(text) {
-  return String(text == null ? '' : text)
+  return stripMarkup(text)
     .replace(/‏|‎|‪|‫|‬|­/g, '') // bidi marks, soft hyphen
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
+}
+
+/**
+ * UI labels a description quotes by name.
+ *
+ * Confirmed on Indus: an avatar's lore reads `Click "Customize"`. If the
+ * description is translated but the button it names is not (or the reverse) the
+ * instruction sends the player looking for a control that does not exist under
+ * that name. Pulling the quoted fragments out lets a caller check them against
+ * the labels actually on screen, in the same locale.
+ */
+const QUOTED_RE = /[\"“”'‘’«»„][^\"“”'‘’«»„]{2,40}[\"“”'‘’«»„]/g;
+function quotedUiReferences(text) {
+  const out = [];
+  for (const m of stripMarkup(text).matchAll(QUOTED_RE)) {
+    const inner = m[0].slice(1, -1).trim();
+    // A quoted sentence is prose, not a control name; labels are short.
+    if (inner && inner.split(/\s+/).length <= 4 && !/[.!?]$/.test(inner)) out.push(inner);
+  }
+  return out;
 }
 
 /** Structure-only form: placeholders and punctuation removed. Used for fuzzy matching. */
@@ -221,6 +259,8 @@ class SheetIndex {
 }
 
 module.exports = {
+  stripMarkup,
+  quotedUiReferences,
   SheetIndex,
   norm,
   skeleton,
