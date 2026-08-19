@@ -646,6 +646,10 @@
               <span class="ds-blockers-title">To start a scan you still need:</span>
               <ul id="ds-blockers-list"></ul>
             </div>
+            <div class="ds-queue-wrap" id="ds-queue-wrap">
+              <label>Then scan these too <span class="ds-opt">(each language runs as its own scan, one after the other)</span></label>
+              <div class="ds-chips" id="ds-lang-queue"></div>
+            </div>
             <div class="ds-row ds-actions">
               <button class="btn btn-secondary sm-btn" id="ds-probe">Test connection</button>
               <button class="btn btn-primary" id="ds-start" disabled>Start scan</button>
@@ -656,6 +660,14 @@
             <div class="ds-probe-out" id="ds-probe-out"></div>
 
             <div class="ds-advanced hidden" id="ds-advanced">
+              <div class="ds-row ds-profile-row">
+                <label for="ds-profile">Profile</label>
+                <select id="ds-profile"></select>
+                <button class="btn btn-secondary sm-btn" id="ds-profile-save">Save as…</button>
+                <button class="btn btn-secondary sm-btn" id="ds-profile-update">Update</button>
+                <button class="btn btn-secondary sm-btn" id="ds-profile-delete">Delete</button>
+              </div>
+              <p class="ds-hint" id="ds-profile-hint">Everything below is remembered in a profile — pick one to set up a scan in a click.</p>
               <div class="ds-grid">
                 <div class="ds-field">
                   <label for="ds-max-screens">Stop after this many screens</label>
@@ -695,16 +707,84 @@
                   <label for="ds-adb-path">ADB path <span class="ds-opt">(optional)</span></label>
                   <input type="text" id="ds-adb-path" placeholder="adb" spellcheck="false" />
                 </div>
+                <div class="ds-field">
+                  <label for="ds-settle">Settle wait <span class="ds-opt">(ms after each tap)</span></label>
+                  <input type="number" id="ds-settle" value="900" min="100" max="10000" step="100" />
+                </div>
+                <div class="ds-field">
+                  <label for="ds-scroll-steps">Scroll steps <span class="ds-opt">(captures per list)</span></label>
+                  <input type="number" id="ds-scroll-steps" value="4" min="1" max="20" />
+                </div>
+                <div class="ds-field">
+                  <label for="ds-longpress-ms">Long-press hold <span class="ds-opt">(ms)</span></label>
+                  <input type="number" id="ds-longpress-ms" value="800" min="200" max="5000" step="100" />
+                </div>
+                <div class="ds-field">
+                  <label for="ds-max-minutes">Time budget <span class="ds-opt">(minutes, 0 = no limit)</span></label>
+                  <input type="number" id="ds-max-minutes" value="0" min="0" max="480" />
+                </div>
+                <div class="ds-field">
+                  <label for="ds-stop-high">Stop after high findings <span class="ds-opt">(0 = keep going)</span></label>
+                  <input type="number" id="ds-stop-high" value="0" min="0" max="1000" />
+                </div>
               </div>
               <div class="ds-toggles">
                 <label class="stoggle"><input type="checkbox" id="ds-vision" checked /><span class="stoggle-track"></span> Claude vision pass</label>
                 <label class="stoggle"><input type="checkbox" id="ds-scroll" checked /><span class="stoggle-track"></span> Scroll through lists</label>
                 <label class="stoggle"><input type="checkbox" id="ds-longpress" checked /><span class="stoggle-track"></span> Long-press for tooltips</label>
+                <label class="stoggle"><input type="checkbox" id="ds-route-lang" checked /><span class="stoggle-track"></span> Switch the game's language first</label>
               </div>
-              <div class="ds-field ds-field-wide">
-                <label for="ds-blocked">Never tap controls matching <span class="ds-opt">(one pattern per line — protects against purchases and destructive actions)</span></label>
-                <textarea id="ds-blocked" rows="4" spellcheck="false"></textarea>
+
+              <div class="ds-grid ds-grid-2">
+                <div class="ds-field">
+                  <label for="ds-blocked">Never tap <span class="ds-opt">(one pattern per line — guards against purchases and destructive actions)</span></label>
+                  <textarea id="ds-blocked" rows="5" spellcheck="false"></textarea>
+                </div>
+                <div class="ds-field">
+                  <label for="ds-only">Only tap <span class="ds-opt">(leave empty for the whole app — set it to scan one area)</span></label>
+                  <textarea id="ds-only" rows="5" spellcheck="false"
+                    placeholder="settings&#10;profile&#10;shop"></textarea>
+                </div>
+                <div class="ds-field">
+                  <label for="ds-focus">Explore first <span class="ds-opt">(these controls jump the queue)</span></label>
+                  <textarea id="ds-focus" rows="4" spellcheck="false"
+                    placeholder="settings&#10;^\?$&#10;info"></textarea>
+                </div>
+                <div class="ds-field">
+                  <label for="ds-rules">Custom checks <span class="ds-opt">(deterministic, free, run on every string)</span></label>
+                  <textarea id="ds-rules" rows="4" spellcheck="false"
+                    placeholder="forbid: \bROBINET\b | high | Never use ROBINET for a tap control&#10;maxlen: 24 on btn_ | medium | Buttons must fit on one line&#10;casing: upper on _CTA | low&#10;require: ^€ on price_"></textarea>
+                </div>
+                <div class="ds-field ds-field-wide">
+                  <label for="ds-steps">Setup steps <span class="ds-opt">(replayed on the device before the crawl — sign in, dismiss the popup, walk to the screen you care about)</span></label>
+                  <textarea id="ds-steps" rows="5" spellcheck="false"
+                    placeholder="restart&#10;wait 4000&#10;tap 0.93 0.08        # close the daily popup&#10;tap 0.5 0.62         # Play&#10;text my.tester@studio.com&#10;key KEYCODE_ENTER"></textarea>
+                </div>
               </div>
+              <div class="ds-row ds-actions">
+                <button class="btn btn-secondary sm-btn" id="ds-validate">Check syntax</button>
+                <button class="btn btn-secondary sm-btn" id="ds-reset-defaults">Reset to defaults</button>
+              </div>
+              <div class="ds-probe-out" id="ds-validate-out"></div>
+              <details class="ds-syntax">
+                <summary>Syntax reference</summary>
+                <div class="ds-syntax-body">
+                  <p><strong>Custom checks</strong> — one per line. <code>on &lt;pattern&gt;</code> narrows a rule to elements
+                    whose path or sheet key matches; the last two fields are severity and your own wording.</p>
+                  <pre>forbid:  &lt;pattern&gt; [on &lt;pattern&gt;] [| high|medium|low] [| message]
+maxlen:  &lt;characters&gt; [on &lt;pattern&gt;] [| severity] [| message]
+casing:  upper|lower|title [on &lt;pattern&gt;] [| severity] [| message]
+require: &lt;pattern&gt; on &lt;pattern&gt; [| severity] [| message]</pre>
+                  <p><strong>Setup steps</strong> — one per line, replayed in order. Coordinates from 0 to 1 are a
+                    fraction of the screen, so a script survives a different device; larger numbers are pixels.
+                    Anything after <code>#</code> is a comment.</p>
+                  <pre>tap &lt;x&gt; &lt;y&gt;              longpress &lt;x&gt; &lt;y&gt; [ms]
+swipe &lt;x1&gt; &lt;y1&gt; &lt;x2&gt; &lt;y2&gt; [ms]
+text &lt;what to type&gt;      key KEYCODE_ENTER
+wait &lt;ms&gt;                back / home
+launch / restart         shell &lt;adb shell command&gt;</pre>
+                </div>
+              </details>
             </div>
           </div>
 
@@ -741,6 +821,7 @@
                 <input type="text" id="ds-filter-text" class="search-query-input" placeholder="Filter findings…" />
                 <button class="btn btn-secondary sm-btn" id="ds-export">Export JSON</button>
                 <button class="btn btn-ghost sm-btn" id="ds-clear" title="Delete past runs and their screenshots">Clear history</button>
+                <button class="btn btn-secondary sm-btn" id="ds-export-csv">Export CSV</button>
               </div>
             </div>
             <div class="ds-explain-row">

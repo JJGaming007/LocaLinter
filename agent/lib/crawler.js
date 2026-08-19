@@ -59,6 +59,14 @@ class Crawler {
 
     this.blocked = safeRegexes(cfg.blockedLabels);
     this.probe = safeRegexes(cfg.probeLabels);
+    // Steering. `focus` reorders the queue, `only` narrows it to the part of
+    // the app the tester actually wants this run spent on.
+    this.focus = safeRegexes(cfg.focusLabels);
+    this.only = safeRegexes(cfg.onlyLabels);
+    this.rules = cfg.compiledRules || [];
+    this.steps = cfg.compiledSteps || [];
+    this.deadline = null;              // set in start() from cfg.maxMinutes
+    this.highIssues = 0;
 
     // An overflow is only reportable as a pair: the same screen in the source
     // language and in the target. A run covers one language, so the source
@@ -268,6 +276,37 @@ class Crawler {
     return this.probe.some((re) => re.test(l));
   }
 
+  isFocused(label) {
+    const l = String(label || '').trim();
+    return !!l && this.focus.some((re) => re.test(l));
+  }
+
+  /** With an "only tap" list set, everything outside it is off the table. */
+  isAllowed(label) {
+    if (!this.only.length) return true;
+    const l = String(label || '').trim();
+    return !!l && this.only.some((re) => re.test(l));
+  }
+
+  /**
+   * Puts the tester's focus patterns at the front of the queue and drops what
+   * an "only tap" list excludes. Route-map controls keep their own precedence;
+   * this only sorts within what is left.
+   */
+  steer(actions, screenId) {
+    let out = actions;
+    if (this.only.length) {
+      out = [];
+      for (const a of actions) {
+        if (a.fromRoute || this.isAllowed(a.label)) out.push(a);
+        else this.run.skipped.push({ screenId, label: a.label, reason: 'outside the "only tap" list' });
+      }
+    }
+    if (!this.focus.length) return out;
+    const rank = (a) => (a.fromRoute ? 0 : this.isFocused(a.label) ? 1 : 2);
+    return out.slice().sort((a, b) => rank(a) - rank(b));
+  }
+
   /** Enumerates the actions available on the current screen. */
   async actionsFor(cap, screenId) {
     // A dismiss-on-sight modal has no controls worth queueing: exploring it
@@ -333,10 +372,10 @@ class Crawler {
       const near = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) < 40 && a.kind === b.kind;
       const kept = actions.filter((a) => !fromRoute.some((r) => near(a, r)));
       this.run.log(`Route map contributed ${fromRoute.length} known controls on ${screenId}.`);
-      return [...fromRoute, ...kept];
+      return this.steer([...fromRoute, ...kept], screenId);
     }
 
-    return actions;
+    return this.steer(actions, screenId);
   }
 
   // ── route map ──────────────────────────────────────────────────────────
@@ -849,6 +888,91 @@ class Crawler {
     return true;
   }
 
+  /**
+   * Replays the tester's setup script before the crawl: dismiss the daily
+   * popup, sign in, walk to the part of the app that needs checking. Steps run
+   * in order and a failure stops the script rather than carrying on from a
+   * screen the rest of the steps were never written for.
+   */
+  async runSteps(steps, label = 'Setup steps') {
+    if (!steps || !steps.length) return true;
+    this.run.log(`${label}: replaying ${steps.length} step${steps.length === 1 ? '' : 's'}.`);
+    const size = () => this.deviceSize || { width: 1080, height: 1920 };
+    // A coordinate of 0–1 is a fraction of the screen, so a script survives a
+    // different device; anything larger is taken as device pixels.
+    const px = (v, span) => (Math.abs(v) <= 1 ? v * span : v);
+
+    for (const step of steps) {
+      if (this.run.stopRequested) return false;
+      const s = size();
+      try {
+        switch (step.verb) {
+          case 'tap':
+            await this.tapAt(px(step.x, s.width), px(step.y, s.height));
+            break;
+          case 'longpress': {
+            const x = px(step.x, s.width);
+            const y = px(step.y, s.height);
+            const ms = step.ms || this.cfg.longPressMs;
+            if (this.useBridge) await this.bridge.longPress(x, y, ms);
+            else if (this.adb) await this.adb.longPress(x, y, ms);
+            else throw new Error('no input transport available');
+            break;
+          }
+          case 'swipe':
+            if (!this.adb) throw new Error('swipe needs a device connection');
+            await this.adb.swipe(px(step.x1, s.width), px(step.y1, s.height), px(step.x2, s.width), px(step.y2, s.height), step.ms);
+            break;
+          case 'text':
+            if (!this.adb) throw new Error('text needs a device connection');
+            await this.adb.typeText(step.arg);
+            break;
+          case 'key':
+            if (!this.adb) throw new Error('key needs a device connection');
+            await this.adb.keyevent(step.arg);
+            break;
+          case 'wait':
+            await sleep(step.ms);
+            break;
+          case 'back':
+            await this.goBack();
+            break;
+          case 'home':
+            if (!this.adb) throw new Error('home needs a device connection');
+            await this.adb.home();
+            break;
+          case 'launch':
+          case 'restart': {
+            if (!this.adb) throw new Error(`${step.verb} needs a device connection`);
+            const pkg = this.cfg.androidPackage;
+            if (!pkg) throw new Error(`${step.verb} needs the Android package name`);
+            if (step.verb === 'restart') {
+              await this.adb.forceStop(pkg);
+              await sleep(1200);
+            }
+            await this.adb.launch(pkg);
+            await sleep(3000);
+            break;
+          }
+          case 'shell':
+            if (!this.adb) throw new Error('shell needs a device connection');
+            await this.adb.shell(step.arg);
+            break;
+          default:
+            break;
+        }
+      } catch (e) {
+        const msg = `${label} stopped at line ${step.line} ("${step.source}"): ${e.message}`;
+        this.run.log(msg, 'warn');
+        this.run.warnings.push(msg);
+        return false;
+      }
+      if (step.verb !== 'wait') await sleep(this.cfg.settleMs);
+    }
+    this.run.log(`${label}: done.`);
+    return true;
+  }
+
   /** "settings.account.languageChange" -> a point on screen. */
   resolveRef(ref) {
     const parts = String(ref).split('.');
@@ -1118,6 +1242,7 @@ class Crawler {
         englishHeader: this.target.sourceHeader,
         rtl: this.target.rtl,
         expectsNonLatin: this.target.expectsNonLatin,
+        customRules: this.rules,
       });
     }
 
@@ -1187,6 +1312,7 @@ class Crawler {
         englishHeader: this.target.sourceHeader,
         rtl: this.target.rtl,
         expectsNonLatin: this.target.expectsNonLatin,
+        customRules: this.rules,
       })) {
         issue.source = 'static-ocr';
         aiStatic.push(issue);
@@ -1237,6 +1363,8 @@ class Crawler {
       if (removed) this.run.log(`Ignored ${removed} finding${removed === 1 ? '' : 's'} you dismissed on an earlier scan.`);
       deduped = kept;
     }
+    this.highIssues += deduped.filter((i) => i.severity === 'high').length;
+    this.langMismatchChecked = this.checkLanguageMismatch(deduped);
     this.run.addIssues(deduped);
     this.run.addScreen({
       id: screenId,
@@ -1587,6 +1715,20 @@ class Crawler {
       this.rootSig = null;
     }
 
+    if (Number(this.cfg.maxMinutes) > 0) {
+      this.deadline = Date.now() + Number(this.cfg.maxMinutes) * 60000;
+      this.run.log(`Time budget: ${this.cfg.maxMinutes} minutes.`);
+    }
+
+    // The setup script runs before anything else — including the language
+    // switch, which usually needs the game past its title screen anyway.
+    if (this.steps.length) {
+      if (!this.deviceSize) {
+        try { this.deviceSize = pngSize(await this.screenshot()); } catch { /* runSteps falls back to a default */ }
+      }
+      await this.runSteps(this.steps);
+    }
+
     if (this.route && this.cfg.routeSetLanguage !== false) {
       try {
         await this.applyRouteLanguage();
@@ -1623,6 +1765,15 @@ class Crawler {
       }
       if (this.actionCount >= this.cfg.maxActions) {
         this.run.warnings.push(`Stopped at the ${this.cfg.maxActions}-action limit.`);
+        break;
+      }
+      if (this.deadline && Date.now() > this.deadline) {
+        this.run.warnings.push(`Stopped at the ${this.cfg.maxMinutes}-minute time budget with ${this.stack.length} controls still queued.`);
+        break;
+      }
+      const highLimit = Number(this.cfg.stopAfterHighIssues) || 0;
+      if (highLimit > 0 && this.highIssues >= highLimit) {
+        this.run.warnings.push(`Stopped after ${this.highIssues} high-severity findings, as configured.`);
         break;
       }
 

@@ -122,6 +122,70 @@ cannot spend money. Edit the list under **Advanced → Never tap controls
 matching**; anything skipped is listed in the run report so you know where
 coverage stops.
 
+## Steering a scan
+
+A crawl left to itself explores everything equally. These are under **Advanced**
+and decide where a run actually spends its budget.
+
+**Profiles.** Everything in Advanced — limits, model, patterns, checks, steps —
+saves under a name and comes back in one click. Four are built in: *Quick smoke*,
+*Standard pass*, *Deep audit*, and *Triage*, which stops at the first ten
+high-severity findings. Your own profiles are stored in the browser.
+
+**Only tap / Explore first.** *Only tap* narrows the run to the part of the app
+you care about — put `shop` there and nothing outside the shop is touched.
+*Explore first* keeps the whole app in scope but pushes matching controls to the
+front of the queue, so a run that ends at its limit ends having covered what
+mattered. Both take one pattern per line, matched case-insensitively.
+
+**Custom checks.** Deterministic rules run alongside the built-in ones, on every
+string, at no API cost. `on <pattern>` narrows a rule to elements whose path or
+sheet key matches.
+
+```
+forbid:  <pattern> [on <pattern>] [| high|medium|low] [| message]
+maxlen:  <characters> [on <pattern>] [| severity] [| message]
+casing:  upper|lower|title [on <pattern>] [| severity] [| message]
+require: <pattern> on <pattern> [| severity] [| message]
+```
+
+```
+forbid: \bROBINET\b | high | Never use ROBINET for a tap control
+maxlen: 24 on btn_ | medium | Buttons must fit on one line
+require: ^€ on price_
+```
+
+These are not the same as **Also check for**, which is prose handed to Claude
+during the vision pass. Write a rule here when it can be decided from the text
+itself; write it there when it takes judgement.
+
+**Setup steps** run on the device before the crawl starts, so a scan can begin
+past the login, the daily popup, and three menus in. Coordinates from 0 to 1 are
+a fraction of the screen, so a script survives a different device; larger numbers
+are pixels. `#` starts a comment.
+
+```
+restart
+wait 4000
+tap 0.93 0.08        # close the daily popup
+tap 0.5 0.62         # Play
+text my.tester@studio.com
+key KEYCODE_ENTER
+```
+
+Available steps: `tap`, `longpress`, `swipe`, `text`, `key`, `wait`, `back`,
+`home`, `launch`, `restart`, `shell`. **Check syntax** reports every mistake with
+its line number before you spend a scan finding out.
+
+**Language queue.** One scan covers one column. Tick the other languages under
+**Then scan these too** and each runs as its own scan, one after another, with no
+one at the keyboard. Stopping a scan cancels the rest of the queue; a failure
+does too, rather than repeating a broken setup five times.
+
+**Budgets.** *Time budget* ends a run after so many minutes, and *Stop after high
+findings* ends it once a set number of serious problems have piled up — both
+report what was still queued when they stopped.
+
 ## Settings
 
 Set in the UI, stored in `agent/config.json`.
@@ -129,6 +193,10 @@ Set in the UI, stored in `agent/config.json`.
 | Setting | Default | Notes |
 |---|---|---|
 | Max screens / actions / depth | 120 / 400 / 12 | Raise for a full sweep, lower for a smoke test |
+| Time budget / Stop after high findings | 0 / 0 | Wall-clock and severity ceilings; 0 means no limit |
+| Only tap / Explore first | — | Narrows the crawl, or reorders it |
+| Custom checks / Setup steps | — | See *Steering a scan* above |
+| Settle wait / Scroll steps / Long-press hold | 900ms / 4 / 800ms | Tune for a slow device or long lists |
 | Model | `claude-opus-5` | `claude-sonnet-5` is faster and cheaper per screen |
 | Effort | `high` | `xhigh` for the most thorough reading |
 | Claude vision pass | on | Off = mechanical checks only, no API cost |
@@ -139,8 +207,11 @@ Set in the UI, stored in `agent/config.json`.
 ## Output
 
 Findings appear live in the Device Scan tab, grouped by screen with the
-screenshot beside them, and can be exported as JSON. Every run also writes
-`agent/runs/<run-id>/` with `report.json` and a PNG per screen.
+screenshot beside them. **Export JSON** carries the whole batch — every language
+scanned in the queue, plus the settings that produced it — and **Export CSV**
+gives one row per finding with its sheet key and row number, which is what
+triage in a spreadsheet needs. Every run also writes `agent/runs/<run-id>/` with
+`report.json` and a PNG per screen.
 
 ## What a scan costs
 

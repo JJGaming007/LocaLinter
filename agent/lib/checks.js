@@ -1,6 +1,7 @@
 'use strict';
 
 const { norm, skeleton, extractPlaceholders, quotedUiReferences } = require('./sheet');
+const { applyRules } = require('./rules');
 
 /**
  * Deterministic, zero-cost checks that run on every captured screen before the
@@ -38,10 +39,11 @@ function hasStrongScript(text) {
 /**
  * @param {object} state    bridge snapshot { screen, texts, scene, locale }
  * @param {SheetIndex} sheet
- * @param {object} opts     { targetHeader, englishHeader, rtl }
+ * @param {object} opts     { targetHeader, englishHeader, rtl, customRules }
  * @returns {Array} issues
  */
 function runChecks(state, sheet, opts = {}) {
+  const customRules = opts.customRules || [];
   const issues = [];
   if (!state || !Array.isArray(state.texts)) return issues;
 
@@ -109,6 +111,21 @@ function runChecks(state, sheet, opts = {}) {
         add('empty_label', 'medium', t, 'Text element is visible and sized but renders nothing — a missing localization key would look like this.');
       }
       continue;
+    }
+
+    // ── the tester's own rules ────────────────────────────────────────────
+    // Scoped by element path or sheet key, so "buttons stay under 24
+    // characters" can mean exactly the buttons.
+    if (customRules.length) {
+      const scopeKey = customRules.some((r) => r.scopeRe)
+        ? (sheet.lookupExact(raw).find((h) => h.entry) || {}).entry
+        : null;
+      for (const hit of applyRules(customRules, raw, {
+        element: t.path || t.id || '',
+        key: scopeKey ? scopeKey.key : '',
+      })) {
+        add(hit.type, hit.severity, t, hit.message, scopeKey ? { key: scopeKey.key, row: scopeKey.rowNumber } : {});
+      }
     }
 
     // ── encoding / font fallback ──────────────────────────────────────────

@@ -22,6 +22,7 @@ const { ClaudeAnalyzer } = require('./lib/claude');
 const { Crawler } = require('./lib/crawler');
 const store = require('./lib/store');
 const routeMaps = require('./lib/routes');
+const { compileRules, parseSteps } = require('./lib/rules');
 const paths = require('./lib/paths');
 const tools = require('./lib/tools');
 const autostart = require('./lib/autostart');
@@ -118,6 +119,18 @@ const routes = {
     if (body.clearApiKey === true) patch.apiKey = '';
     const next = config.save(patch);
     return { config: config.redact(next), savedTo: config.CONFIG_PATH };
+  },
+
+  // Lints the custom checks and setup steps as they are typed, so a mistake
+  // surfaces in the panel rather than halfway through a twenty-minute scan.
+  'POST /api/validate': async (req) => {
+    const body = await readBody(req, 256 * 1024);
+    const rules = compileRules(body.customRules || '');
+    const steps = parseSteps(body.preSteps || '');
+    return {
+      rules: { count: rules.rules.length, errors: rules.errors },
+      steps: { count: steps.steps.length, errors: steps.errors },
+    };
   },
 
   'GET /api/devices': async () => {
@@ -404,7 +417,10 @@ const routes = {
 function pickOverrides(options) {
   const out = {};
   if (!options || typeof options !== 'object') return out;
-  const numeric = ['maxScreens', 'maxActions', 'maxDepth', 'settleMs', 'scrollSteps', 'longPressMs', 'bridgePort'];
+  const numeric = [
+    'maxScreens', 'maxActions', 'maxDepth', 'settleMs', 'scrollSteps', 'longPressMs', 'bridgePort',
+    'maxMinutes', 'stopAfterHighIssues',
+  ];
   for (const k of numeric) {
     if (options[k] != null && Number.isFinite(Number(options[k]))) out[k] = Number(options[k]);
   }
@@ -414,8 +430,37 @@ function pickOverrides(options) {
   for (const k of ['androidPackage', 'model', 'effort', 'baseUrl', 'extraChecks']) {
     if (typeof options[k] === 'string' && options[k].trim()) out[k] = options[k].trim();
   }
-  if (Array.isArray(options.blockedLabels)) out.blockedLabels = options.blockedLabels.map(String);
+  // These are meaningful when empty — a run that clears the focus list has to
+  // be able to say so, which a truthiness test would swallow.
+  for (const k of ['customRules', 'preSteps']) {
+    if (typeof options[k] === 'string') out[k] = options[k];
+  }
+  for (const k of ['blockedLabels', 'focusLabels', 'onlyLabels']) {
+    if (Array.isArray(options[k])) out[k] = options[k].map(String);
+  }
   return out;
+}
+
+/**
+ * Turns the tester's rule and step text into something the crawler can run,
+ * and surfaces every syntax error instead of quietly ignoring the line.
+ */
+function compileAutomation(cfg, run) {
+  const { rules, errors: ruleErrors } = compileRules(cfg.customRules || '');
+  const { steps, errors: stepErrors } = parseSteps(cfg.preSteps || '');
+
+  for (const e of ruleErrors) {
+    run.log(`Custom check ignored — ${e}`, 'warn');
+    run.warnings.push(`Custom check ignored — ${e}`);
+  }
+  for (const e of stepErrors) {
+    run.log(`Setup step ignored — ${e}`, 'warn');
+    run.warnings.push(`Setup step ignored — ${e}`);
+  }
+  if (rules.length) run.log(`${rules.length} custom check${rules.length === 1 ? '' : 's'} active.`);
+  if (steps.length) run.log(`${steps.length} setup step${steps.length === 1 ? '' : 's'} will run before the crawl.`);
+
+  return { compiledRules: rules, compiledSteps: steps };
 }
 
 // ── the scan itself ───────────────────────────────────────────────────────
@@ -520,8 +565,15 @@ async function startScan({ run, cfg, sheet, target, mode, serial, route }) {
   run.log(`Using ${cfg.model} at ${cfg.effort} effort.`);
 
   const expectsNonLatin = /^(ar|he|fa|ur|hi|bn|ta|te|mr|th|ja|ko|zh|ru|uk|el)/.test(String(target.code || ''));
+  const automation = compileAutomation(cfg, run);
+  if ((cfg.onlyLabels || []).length) {
+    run.log(`Only tapping controls matching: ${cfg.onlyLabels.join(', ')}`);
+  }
+  if ((cfg.focusLabels || []).length) {
+    run.log(`Exploring first: ${cfg.focusLabels.join(', ')}`);
+  }
   const crawler = new Crawler({
-    cfg,
+    cfg: { ...cfg, ...automation },
     adb,
     bridge,
     sheet,

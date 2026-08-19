@@ -23,6 +23,22 @@ const DEFAULTS = {
   maxDepth: 12,
   settleMs: 900,                    // wait after a tap before capturing
   settleTimeoutMs: 6000,
+  maxMinutes: 0,                    // wall-clock budget for a run; 0 => no limit
+  stopAfterHighIssues: 0,           // bail out once this many high findings land; 0 => no limit
+
+  // Steering: which controls the crawl spends its budget on.
+  // focusLabels are explored first; onlyLabels, when set, is the whole world.
+  focusLabels: [],
+  onlyLabels: [],
+
+  // Deterministic house rules, one per line, in the mini-language in rules.js:
+  //   forbid: \bROBINET\b | high | Never use ROBINET for a tap control
+  //   maxlen: 24 on btn_ | medium | Buttons must fit one line
+  customRules: '',
+
+  // Replayed on the device before the crawl starts — dismiss the daily popup,
+  // sign in, walk to the screen that actually needs checking.
+  preSteps: '',
 
   // Safety: never tap an element whose label matches one of these (case-insensitive).
   // Protects against real purchases / destructive actions on a live device.

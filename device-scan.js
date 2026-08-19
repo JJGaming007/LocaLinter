@@ -19,6 +19,7 @@
   let issues = [];
   let screens = new Map();
   let running = false;
+  let currentLanguage = '';
 
   document.addEventListener('DOMContentLoaded', init);
 
@@ -30,10 +31,15 @@
       'ds-advanced-toggle', 'ds-advanced', 'ds-probe-out', 'ds-agent-out', 'ds-target-status',
       'ds-max-screens', 'ds-max-actions', 'ds-max-depth', 'ds-model', 'ds-effort', 'ds-adb-path',
       'ds-vision', 'ds-scroll', 'ds-longpress', 'ds-blocked', 'ds-base-url', 'ds-extra-checks',
+      'ds-settle', 'ds-scroll-steps', 'ds-longpress-ms', 'ds-max-minutes', 'ds-stop-high',
+      'ds-route-lang', 'ds-only', 'ds-focus', 'ds-rules', 'ds-steps',
+      'ds-validate', 'ds-validate-out', 'ds-reset-defaults', 'ds-lang-queue', 'ds-queue-wrap',
+      'ds-profile', 'ds-profile-save', 'ds-profile-update', 'ds-profile-delete', 'ds-profile-hint',
       'ds-run-panel', 'ds-run-status', 'ds-stat-screens', 'ds-stat-actions', 'ds-stat-issues',
       'ds-stat-queue', 'ds-summary', 'ds-log', 'ds-results-panel', 'ds-findings',
       'ds-filter-severity', 'ds-filter-type', 'ds-filter-text', 'ds-export', 'ds-clear',
       'ds-explain', 'ds-explain-btn', 'ds-explain-out',
+      'ds-filter-severity', 'ds-filter-type', 'ds-filter-text', 'ds-export', 'ds-export-csv',
       'ds-shot-overlay', 'ds-shot-img', 'ds-shot-caption', 'ds-shot-close', 'badge-device',
       'ds-blockers', 'ds-blockers-list', 'ds-device-refresh',
     ].forEach((id) => { el[id.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = $(id); });
@@ -56,6 +62,19 @@
     el.dsClear.addEventListener('click', clearHistory);
     el.dsExplainBtn.addEventListener('click', explainString);
     el.dsExplain.addEventListener('keydown', (e) => { if (e.key === 'Enter') explainString(); });
+    el.dsExportCsv.addEventListener('click', exportCsv);
+    el.dsValidate.addEventListener('click', validateAutomation);
+    el.dsResetDefaults.addEventListener('click', resetToDefaults);
+    el.dsProfile.addEventListener('change', onProfilePick);
+    el.dsProfileSave.addEventListener('click', saveProfileAs);
+    el.dsProfileUpdate.addEventListener('click', updateProfile);
+    el.dsProfileDelete.addEventListener('click', deleteProfile);
+    // Whatever the panel was last set to is what the next scan almost always
+    // wants, so it survives a reload without anyone pressing Save.
+    SETTING_IDS.forEach((id) => {
+      const node = el[camel(id)];
+      if (node) node.addEventListener('change', rememberSettings);
+    });
     el.dsShotClose.addEventListener('click', () => el.dsShotOverlay.classList.add('hidden'));
     el.dsShotOverlay.addEventListener('click', (e) => {
       if (e.target === el.dsShotOverlay) el.dsShotOverlay.classList.add('hidden');
@@ -77,6 +96,7 @@
 
     el.dsSheet.addEventListener('change', onSheetChange);
     el.dsRoute.addEventListener('change', renderRouteCard);
+    el.dsLanguage.addEventListener('change', () => { renderLangQueue(); updateStartState(); });
 
     if (el.dsDeviceRefresh) el.dsDeviceRefresh.addEventListener('click', refreshDevices);
 
@@ -112,6 +132,8 @@
       }
     });
 
+    renderProfiles();
+    restoreSettings();
     onModeChange();
     refreshSheets();
     if (document.getElementById('tab-device-scan').classList.contains('active')) {
@@ -141,6 +163,240 @@
     const pkg = (el.dsPackage.value || '').trim();
     const match = [...el.dsBuild.options].some((o) => o.value === pkg);
     el.dsBuild.value = match ? pkg : '';
+  }
+
+  function camel(id) {
+    return id.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+  }
+
+  // ── settings, profiles ──────────────────────────────────────────────────
+  // Everything a tester tunes lives in one list, so remembering it, exporting
+  // it as a profile and resetting it are the same three lines rather than
+  // three places to forget a new field.
+
+  const SETTING_IDS = [
+    'ds-mode', 'ds-package', 'ds-route', 'ds-extra-checks',
+    'ds-max-screens', 'ds-max-actions', 'ds-max-depth', 'ds-model', 'ds-effort',
+    'ds-base-url', 'ds-adb-path', 'ds-settle', 'ds-scroll-steps', 'ds-longpress-ms',
+    'ds-max-minutes', 'ds-stop-high',
+    'ds-vision', 'ds-scroll', 'ds-longpress', 'ds-route-lang',
+    'ds-blocked', 'ds-only', 'ds-focus', 'ds-rules', 'ds-steps',
+  ];
+  const PROFILE_KEY = 'localinter_ds_profiles';
+  const LAST_KEY = 'localinter_ds_last';
+  const PROFILE_PICK_KEY = 'localinter_ds_profile';
+
+  // Three starting points that cover most of what people actually ask for.
+  // Only the fields a preset cares about are listed; the rest stay as they are.
+  const BUILT_IN = {
+    '': { label: 'Custom (whatever is set below)' },
+    quick: {
+      label: 'Quick smoke — first screens, cheap',
+      values: {
+        'ds-max-screens': 15, 'ds-max-actions': 50, 'ds-max-depth': 3,
+        'ds-model': 'claude-sonnet-5', 'ds-effort': 'medium',
+        'ds-scroll-steps': 2, 'ds-max-minutes': 10, 'ds-stop-high': 0,
+        'ds-vision': true, 'ds-scroll': true, 'ds-longpress': false,
+      },
+    },
+    standard: {
+      label: 'Standard pass — balanced',
+      values: {
+        'ds-max-screens': 120, 'ds-max-actions': 400, 'ds-max-depth': 12,
+        'ds-model': 'claude-opus-5', 'ds-effort': 'high',
+        'ds-scroll-steps': 4, 'ds-max-minutes': 0, 'ds-stop-high': 0,
+        'ds-vision': true, 'ds-scroll': true, 'ds-longpress': true,
+      },
+    },
+    deep: {
+      label: 'Deep audit — everything, slowly',
+      values: {
+        'ds-max-screens': 400, 'ds-max-actions': 2000, 'ds-max-depth': 25,
+        'ds-model': 'claude-opus-5', 'ds-effort': 'xhigh',
+        'ds-scroll-steps': 8, 'ds-settle': 1400, 'ds-max-minutes': 0, 'ds-stop-high': 0,
+        'ds-vision': true, 'ds-scroll': true, 'ds-longpress': true,
+      },
+    },
+    triage: {
+      label: 'Triage — stop at the first ten serious findings',
+      values: {
+        'ds-max-screens': 200, 'ds-max-actions': 600, 'ds-max-depth': 12,
+        'ds-model': 'claude-sonnet-5', 'ds-effort': 'high',
+        'ds-stop-high': 10, 'ds-max-minutes': 30,
+        'ds-vision': true, 'ds-scroll': true, 'ds-longpress': false,
+      },
+    },
+  };
+
+  function readSettings() {
+    const out = {};
+    SETTING_IDS.forEach((id) => {
+      const node = el[camel(id)];
+      if (!node) return;
+      out[id] = node.type === 'checkbox' ? node.checked : node.value;
+    });
+    return out;
+  }
+
+  function writeSettings(values) {
+    if (!values) return;
+    Object.entries(values).forEach(([id, v]) => {
+      const node = el[camel(id)];
+      if (!node) return;
+      if (node.type === 'checkbox') node.checked = !!v;
+      else node.value = v;
+    });
+    onModeChange();
+  }
+
+  function rememberSettings() {
+    try { localStorage.setItem(LAST_KEY, JSON.stringify(readSettings())); } catch { /* private mode */ }
+  }
+
+  function rememberedSetting(id) {
+    try {
+      const raw = localStorage.getItem(LAST_KEY);
+      return raw ? (JSON.parse(raw) || {})[id] : null;
+    } catch { return null; }
+  }
+
+  function restoreSettings() {
+    try {
+      const raw = localStorage.getItem(LAST_KEY);
+      if (raw) writeSettings(JSON.parse(raw));
+    } catch { /* nothing worth reporting */ }
+    const picked = localStorage.getItem(PROFILE_PICK_KEY);
+    if (picked && el.dsProfile.querySelector(`option[value="${CSS.escape(picked)}"]`)) el.dsProfile.value = picked;
+  }
+
+  function customProfiles() {
+    try { return JSON.parse(localStorage.getItem(PROFILE_KEY)) || {}; } catch { return {}; }
+  }
+
+  function saveCustomProfiles(map) {
+    try { localStorage.setItem(PROFILE_KEY, JSON.stringify(map)); } catch {
+      toast('This browser will not let the page store profiles.', 'error');
+    }
+  }
+
+  function renderProfiles(select) {
+    const custom = customProfiles();
+    const prev = select || el.dsProfile.value;
+    el.dsProfile.innerHTML = '';
+    const add = (value, label, group) => {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      (group || el.dsProfile).appendChild(opt);
+    };
+    Object.entries(BUILT_IN).forEach(([k, p]) => add(k, p.label));
+    const names = Object.keys(custom).sort();
+    if (names.length) {
+      const group = document.createElement('optgroup');
+      group.label = 'Saved';
+      names.forEach((n) => add(`custom:${n}`, n, group));
+      el.dsProfile.appendChild(group);
+    }
+    if (prev && [...el.dsProfile.querySelectorAll('option')].some((o) => o.value === prev)) el.dsProfile.value = prev;
+    updateProfileButtons();
+  }
+
+  function updateProfileButtons() {
+    const isCustom = el.dsProfile.value.startsWith('custom:');
+    el.dsProfileUpdate.disabled = !isCustom;
+    el.dsProfileDelete.disabled = !isCustom;
+  }
+
+  function onProfilePick() {
+    const value = el.dsProfile.value;
+    localStorage.setItem(PROFILE_PICK_KEY, value);
+    updateProfileButtons();
+    if (!value) return;
+    if (value.startsWith('custom:')) {
+      const saved = customProfiles()[value.slice(7)];
+      if (!saved) return;
+      writeSettings(saved.values);
+      el.dsProfileHint.textContent = `Loaded "${value.slice(7)}".`;
+    } else {
+      const preset = BUILT_IN[value];
+      if (!preset || !preset.values) return;
+      writeSettings(preset.values);
+      el.dsProfileHint.textContent = `${preset.label} — limits and model set; your patterns and steps are untouched.`;
+    }
+    rememberSettings();
+  }
+
+  function saveProfileAs() {
+    const name = (prompt('Name this profile', 'My scan') || '').trim();
+    if (!name) return;
+    const map = customProfiles();
+    map[name] = { values: readSettings(), savedAt: Date.now() };
+    saveCustomProfiles(map);
+    renderProfiles(`custom:${name}`);
+    el.dsProfile.value = `custom:${name}`;
+    localStorage.setItem(PROFILE_PICK_KEY, el.dsProfile.value);
+    updateProfileButtons();
+    el.dsProfileHint.textContent = `Saved "${name}". It covers every field in Advanced, including your checks and steps.`;
+    toast(`Profile "${name}" saved.`);
+  }
+
+  function updateProfile() {
+    const value = el.dsProfile.value;
+    if (!value.startsWith('custom:')) return;
+    const name = value.slice(7);
+    const map = customProfiles();
+    map[name] = { values: readSettings(), savedAt: Date.now() };
+    saveCustomProfiles(map);
+    el.dsProfileHint.textContent = `Updated "${name}".`;
+    toast(`Profile "${name}" updated.`);
+  }
+
+  function deleteProfile() {
+    const value = el.dsProfile.value;
+    if (!value.startsWith('custom:')) return;
+    const name = value.slice(7);
+    if (!confirm(`Delete the profile "${name}"?`)) return;
+    const map = customProfiles();
+    delete map[name];
+    saveCustomProfiles(map);
+    renderProfiles('');
+    el.dsProfile.value = '';
+    el.dsProfileHint.textContent = `Deleted "${name}".`;
+  }
+
+  // Back to the agent's own defaults rather than to whatever this browser last
+  // held, which is what "reset" has to mean when a run has gone strange.
+  function resetToDefaults() {
+    if (!agentConfig) {
+      writeSettings(BUILT_IN.standard.values);
+    } else {
+      applyConfig(agentConfig);
+      writeSettings(BUILT_IN.standard.values);
+    }
+    el.dsOnly.value = '';
+    el.dsFocus.value = '';
+    el.dsRules.value = '';
+    el.dsSteps.value = '';
+    rememberSettings();
+    el.dsProfileHint.textContent = 'Back to the defaults the agent shipped with.';
+  }
+
+  async function validateAutomation() {
+    el.dsValidateOut.innerHTML = '<div class="ds-msg">Checking…</div>';
+    try {
+      const r = await api('/api/validate', {
+        method: 'POST',
+        body: JSON.stringify({ customRules: el.dsRules.value, preSteps: el.dsSteps.value }),
+      });
+      const parts = [];
+      const errors = [...r.rules.errors, ...r.steps.errors];
+      parts.push(`<div class="ds-msg ${errors.length ? 'warn' : 'ok'}">${r.rules.count} custom check${
+        r.rules.count === 1 ? '' : 's'} and ${r.steps.count} setup step${r.steps.count === 1 ? '' : 's'} understood.</div>`);
+      for (const e of errors) parts.push(`<div class="ds-msg bad">${escapeHtml(e)}</div>`);
+      el.dsValidateOut.innerHTML = parts.join('');
+    } catch (e) {
+      el.dsValidateOut.innerHTML = `<div class="ds-msg bad">${escapeHtml(e.message)}</div>`;
+    }
   }
 
   async function connectAndLoadRoutes() {
@@ -192,6 +448,10 @@
       const { config } = await api('/api/config');
       agentConfig = config;
       applyConfig(config);
+      // The agent's stored config is the baseline; anything the tester has
+      // since typed into this panel is what they are actually looking at, so
+      // it wins over what connecting just painted in.
+      restoreSettings();
       await refreshAdb();
       await refreshDevices();
       refreshLanguages();
@@ -232,7 +492,17 @@
     el.dsVision.checked = c.visionEnabled !== false;
     el.dsScroll.checked = c.scrollProbe !== false;
     el.dsLongpress.checked = c.longPressProbe !== false;
+    el.dsRouteLang.checked = c.routeSetLanguage !== false;
     el.dsBlocked.value = (c.blockedLabels || []).join('\n');
+    el.dsOnly.value = (c.onlyLabels || []).join('\n');
+    el.dsFocus.value = (c.focusLabels || []).join('\n');
+    el.dsRules.value = c.customRules || '';
+    el.dsSteps.value = c.preSteps || '';
+    if (c.settleMs) el.dsSettle.value = c.settleMs;
+    if (c.scrollSteps) el.dsScrollSteps.value = c.scrollSteps;
+    if (c.longPressMs) el.dsLongpressMs.value = c.longPressMs;
+    el.dsMaxMinutes.value = c.maxMinutes || 0;
+    el.dsStopHigh.value = c.stopAfterHighIssues || 0;
     updateStartState();
   }
 
@@ -406,7 +676,10 @@
       opt.textContent = `${rt.label} — ${rt.screens} screens`;
       el.dsRoute.appendChild(opt);
     });
-    if (prev && routeList.some((rt) => rt.name === prev)) el.dsRoute.value = prev;
+    // The picker is empty until the agent answers, which is after the panel has
+    // restored its settings — so the remembered route is applied here instead.
+    const remembered = prev || rememberedSetting('ds-route');
+    if (remembered && routeList.some((rt) => rt.name === remembered)) el.dsRoute.value = remembered;
     else autoSelectRoute();
     renderRouteCard();
   }
@@ -524,6 +797,7 @@
     });
     if (prev && [...el.dsLanguage.options].some((o) => o.value === prev)) el.dsLanguage.value = prev;
     setStatus(el.dsTargetStatus, `${s.rows.length} rows · ${el.dsLanguage.options.length} languages`, 'ok');
+    renderLangQueue();
     updateStartState();
   }
 
@@ -566,19 +840,72 @@
     el.dsStart.title = `Not ready yet — ${missing.length} thing${missing.length > 1 ? 's' : ''} still needed.`;
   }
 
+  function lines(node) {
+    return node.value.split('\n').map((s) => s.trim()).filter(Boolean);
+  }
+
   function options() {
     return {
       maxScreens: Number(el.dsMaxScreens.value),
       maxActions: Number(el.dsMaxActions.value),
       maxDepth: Number(el.dsMaxDepth.value),
+      settleMs: Number(el.dsSettle.value),
+      scrollSteps: Number(el.dsScrollSteps.value),
+      longPressMs: Number(el.dsLongpressMs.value),
+      maxMinutes: Number(el.dsMaxMinutes.value),
+      stopAfterHighIssues: Number(el.dsStopHigh.value),
       model: el.dsModel.value,
       effort: el.dsEffort.value,
       visionEnabled: el.dsVision.checked,
       scrollProbe: el.dsScroll.checked,
       longPressProbe: el.dsLongpress.checked,
+      routeSetLanguage: el.dsRouteLang.checked,
       androidPackage: el.dsPackage.value.trim(),
-      blockedLabels: el.dsBlocked.value.split('\n').map((s) => s.trim()).filter(Boolean),
+      blockedLabels: lines(el.dsBlocked),
+      onlyLabels: lines(el.dsOnly),
+      focusLabels: lines(el.dsFocus),
+      customRules: el.dsRules.value,
+      preSteps: el.dsSteps.value,
     };
+  }
+
+  // ── language queue ──────────────────────────────────────────────────────
+  // One scan covers one column. Testers have five languages to get through, so
+  // the extra ones queue up and run themselves rather than needing someone at
+  // the keyboard between them.
+
+  let queued = [];               // language headers still to scan
+  let batchPrimary = '';         // the language the tester actually picked
+  let batchRan = [];             // the queue as it stood when Start was pressed
+  const results = new Map();     // language -> { issues, screens, runId }
+
+  function renderLangQueue() {
+    const s = sheet();
+    if (!el.dsLangQueue) return;
+    const chosen = new Set(queuedFromUi());
+    el.dsLangQueue.innerHTML = '';
+    if (!s) {
+      el.dsQueueWrap.classList.add('hidden');
+      return;
+    }
+    const current = el.dsLanguage.value;
+    const others = s.headers.slice(1).filter((h) => h && h.trim() && h !== current);
+    if (!others.length) {
+      el.dsQueueWrap.classList.add('hidden');
+      return;
+    }
+    el.dsQueueWrap.classList.remove('hidden');
+    others.forEach((h) => {
+      const id = `ds-q-${h.replace(/\W+/g, '_')}`;
+      const label = document.createElement('label');
+      label.className = 'ds-chip';
+      label.innerHTML = `<input type="checkbox" id="${id}" value="${escapeHtml(h)}"${chosen.has(h) ? ' checked' : ''} /> ${escapeHtml(h)}`;
+      el.dsLangQueue.appendChild(label);
+    });
+  }
+
+  function queuedFromUi() {
+    return [...el.dsLangQueue.querySelectorAll('input:checked')].map((i) => i.value);
   }
 
   // ── run control ─────────────────────────────────────────────────────────
@@ -625,6 +952,20 @@
   async function start() {
     const s = sheet();
     if (!s) return toast('Load a localization sheet first.', 'error');
+    queued = queuedFromUi();
+    batchRan = queued.slice();
+    batchPrimary = el.dsLanguage.value;
+    results.clear();
+    rememberSettings();
+    if (queued.length) {
+      log(`${queued.length} more language${queued.length === 1 ? '' : 's'} queued after this one: ${queued.join(', ')}.`, 'info');
+    }
+    return beginRun(el.dsLanguage.value);
+  }
+
+  async function beginRun(language) {
+    const s = sheet();
+    if (!s) return toast('Load a localization sheet first.', 'error');
 
     issues = [];
     screens = new Map();
@@ -646,13 +987,14 @@
         body: JSON.stringify({
           mode: el.dsMode.value,
           serial: el.dsDevice.value || null,
-          targetLanguage: el.dsLanguage.value,
+          targetLanguage: language,
           route: el.dsRoute.value || null,
           sheet: s,
           options: options(),
         }),
       });
       runId = r.runId;
+      currentLanguage = r.language || language;
       running = true;
       reconnectAttempts = 0;
       el.dsStop.disabled = false;
@@ -669,6 +1011,11 @@
 
   async function stop() {
     if (!runId) return;
+    // Stopping means stopping, not "stop this one and start French".
+    if (queued.length) {
+      log(`Cancelled the ${queued.length} queued language scan${queued.length === 1 ? '' : 's'}.`, 'warn');
+      queued = [];
+    }
     // The scan finishes the screen it is on before it unwinds, which with the
     // vision pass can take the better part of a minute. Say that, rather than
     // leaving a dead-looking button.
@@ -787,12 +1134,12 @@
           ev.status === 'done' ? `Finished — ${ev.issues} issues` : `${ev.status}${ev.error ? `: ${ev.error}` : ''}`,
           ev.status === 'done' ? 'ok' : ev.status === 'stopped' ? 'warn' : 'bad'
         );
-        finalize();
+        finalize(ev.status);
         break;
     }
   }
 
-  async function finalize() {
+  async function finalize(status) {
     if (!runId) return;
     try {
       const report = await api(`/api/run/${runId}`);
@@ -817,6 +1164,43 @@
     } catch (e) {
       log(`Could not load the final report: ${e.message}`, 'warn');
     }
+    // Keep each language's findings so the export covers the whole batch, not
+    // just whichever scan happened to finish last.
+    results.set(currentLanguage, { runId, issues: issues.slice(), screens: [...screens.values()] });
+    runNextQueued(status);
+  }
+
+  /**
+   * A batch walks the language picker through every queued column, which would
+   * otherwise leave it parked on whichever one happened to be last. Put it back
+   * where the tester left it, so pressing Start again repeats the same batch.
+   */
+  function endBatch() {
+    if (!batchPrimary || el.dsLanguage.value === batchPrimary) return;
+    if (![...el.dsLanguage.options].some((o) => o.value === batchPrimary)) return;
+    el.dsLanguage.value = batchPrimary;
+    renderLangQueue();
+    // The language that was primary a moment ago had no chip to stay ticked
+    // in, so the batch is re-ticked from what it actually ran.
+    el.dsLangQueue.querySelectorAll('input').forEach((i) => {
+      if (batchRan.includes(i.value)) i.checked = true;
+    });
+    updateStartState();
+  }
+
+  function runNextQueued(status) {
+    if (!queued.length) return endBatch();
+    if (status !== 'done') {
+      log(`Run ${status} — not starting the ${queued.length} queued language scan${queued.length === 1 ? '' : 's'}.`, 'warn');
+      queued = [];
+      endBatch();
+      return;
+    }
+    const next = queued.shift();
+    const done = [...results.keys()].join(', ');
+    log(`Finished ${done}. Starting ${next}${queued.length ? ` (${queued.length} still queued)` : ''}.`, 'info');
+    el.dsLanguage.value = next;
+    setTimeout(() => beginRun(next), 500);
   }
 
   // ── rendering ───────────────────────────────────────────────────────────
@@ -1078,14 +1462,50 @@
     const payload = {
       runId,
       exportedAt: new Date().toISOString(),
-      language: el.dsLanguage.value,
+      language: currentLanguage || el.dsLanguage.value,
+      settings: options(),
       screens: [...screens.values()],
       issues,
+      // A batch of languages is one job to whoever reads the report.
+      batch: [...results.entries()].map(([language, r]) => ({
+        language, runId: r.runId, issues: r.issues, screens: r.screens,
+      })),
     };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    download(`device-scan-${runId || 'report'}.json`, JSON.stringify(payload, null, 2), 'application/json');
+  }
+
+  // Spreadsheets are where triage actually happens: one row per finding, with
+  // the sheet key and row number so a fix goes straight back into the source.
+  function exportCsv() {
+    const cols = ['language', 'severity', 'type', 'source', 'screen', 'text', 'expected', 'key', 'sheetRow', 'element', 'message', 'reachedVia'];
+    const rows = [];
+    const batch = results.size ? [...results.entries()] : [[currentLanguage || el.dsLanguage.value, { issues, screens: [...screens.values()] }]];
+    for (const [language, r] of batch) {
+      const byId = new Map((r.screens || []).map((s) => [s.id, s]));
+      for (const i of r.issues || []) {
+        const screen = byId.get(i.screenId);
+        rows.push([
+          language, i.severity, i.type, i.alsoSeenBy ? `${i.source}+vision` : i.source, i.screenId,
+          i.text, i.expected || '', i.key || '', i.row || '', i.element || i.where || '', i.message,
+          screen && screen.path ? screen.path.join(' > ') : '',
+        ]);
+      }
+    }
+    const esc = (v) => {
+      const s = String(v == null ? '' : v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const csv = [cols.join(','), ...rows.map((r) => r.map(esc).join(','))].join('\r\n');
+    // A leading BOM is what makes Excel open UTF-8 without mangling the very
+    // translations this report is about.
+    download(`device-scan-${runId || 'report'}.csv`, `﻿${csv}`, 'text/csv');
+  }
+
+  function download(name, content, type) {
+    const blob = new Blob([content], { type: `${type};charset=utf-8` });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `device-scan-${runId || 'report'}.json`;
+    a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }

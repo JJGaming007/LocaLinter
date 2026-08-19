@@ -129,6 +129,29 @@ class Adb {
     return this.shell('input keyevent KEYCODE_BACK');
   }
 
+  home() {
+    return this.shell('input keyevent KEYCODE_HOME');
+  }
+
+  /** `input keyevent` by name (KEYCODE_ENTER) or number (66). */
+  keyevent(code) {
+    const c = String(code).trim();
+    if (!/^[A-Za-z0-9_]+$/.test(c)) throw new Error(`"${code}" is not a keycode`);
+    return this.shell(`input keyevent ${c}`);
+  }
+
+  /**
+   * Types into whatever has focus. `input text` takes no spaces and chokes on
+   * shell metacharacters, so the string is escaped and spaces sent as %s —
+   * which is what the tool itself documents.
+   */
+  typeText(text) {
+    const escaped = String(text)
+      .replace(/(["$`\\()<>|&;*?~^'])/g, '\\$1')
+      .replace(/ /g, '%s');
+    return this.shell(`input text "${escaped}"`);
+  }
+
   /** Forwards a local TCP port to the device so we can reach the in-app bridge. */
   forward(localPort, devicePort = localPort) {
     return this.text(['forward', `tcp:${localPort}`, `tcp:${devicePort}`], { timeoutMs: 15000 });
