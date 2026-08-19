@@ -86,7 +86,8 @@
     "restartAfterLanguageChange": "Restart the app after every language change before capturing anything. This build freezes part of its UI in the language the process launched with — confirmed across four languages, and confirmed fixed by a force-stop and relaunch. Without the restart a scan reports stale strings as untranslated defects throughout the build. Cold launch to the lobby takes ~40s, and a daily-login modal reliably appears afterwards and must be dismissed before any lobby coordinate is driven.",
     "modalsBeforeCoordinates": "Check for a known modal before driving any recorded coordinate. Indus shows a promo interstitial and a DAILY LOGIN REWARDS modal over the lobby, both after launch and after every language change. During recording the daily-login modal swallowed three separate navigation sequences: the taps landed on the modal, the crawl believed it had reached Settings, and the following captures were of the wrong screen and would have been reported as such. Dismiss with the modal's own close control, never with BACK — BACK on the lobby opens the exit-game dialog.",
     "pickerTwoHopSelection": "Reaching a language far from the currently checked one. The re-anchor parks the CHECKED entry at the top of the viewport, so scrolling toward a distant target keeps getting pulled back and the target can never be held in view long enough to tap. The way through: tapping a row only moves the checkbox - NOTHING is applied until CONFIRM - so an intermediate selection is free. Tap any row near the target, let the list re-anchor onto it (~3s), then tap the real target from the now-stable list, then verifyChecked. Two hops, both verified. This is how THAI was reached on 2026-08-19 after three failed single-hop attempts.",
-    "thaiDiacriticsNeedCropping": "Thai tone marks (mai ek, mai tho, mai taikhu, thanthakhat) are small, sit right at the cap line, and are the single easiest thing in this build to hallucinate a defect about. On 2026-08-19 two 'missing tone mark' findings were raised at full-screen resolution and BOTH died when cropped and upscaled 4x - the marks were simply below the resolution being judged at. Never call a Thai spelling defect without cropping first. The converse also holds: the genuine misspelling that session found (knownFindings.quadSenseAndSpellingThai) was only confirmable at 4x."
+    "thaiDiacriticsNeedCropping": "Thai tone marks (mai ek, mai tho, mai taikhu, thanthakhat) are small, sit right at the cap line, and are the single easiest thing in this build to hallucinate a defect about. On 2026-08-19 two 'missing tone mark' findings were raised at full-screen resolution and BOTH died when cropped and upscaled 4x - the marks were simply below the resolution being judged at. Never call a Thai spelling defect without cropping first. The converse also holds: the genuine misspelling that session found (knownFindings.quadSenseAndSpellingThai) was only confirmable at 4x.",
+    "zoomResolvesPresenceNotIdentity": "The magnified second look settles whether a mark is PRESENT and whether text FITS. It does not reliably settle WHICH mark it is. Vietnamese stacks two diacritics on one vowel and condensed display fonts offset rather than stack them, so at 8x a circumflex-plus-tilde and a horn-plus-tilde can look alike - and in Vietnamese that difference changes the word. When identity rather than presence is the question, check the sheet for the exact string and report 'not in the sheet' if it is missing; failing that, hand it to a native reviewer. Do not escalate a guess by magnifying it."
   },
   "recovery": {
     "$comment": "EC-70001 'LOST CONNECTION' can strand the app on a modal that RETRY does not clear. A force-stop and relaunch reliably recovers it; observed on dev 1.12.0, not reproduced on prod 2.14.0.",
@@ -1967,13 +1968,14 @@
     },
     "tapSenseVietnamese": {
       "language": "Vietnamese",
-      "severity": "high",
-      "string": "VỠ NHẸ",
-      "where": [
-        "settings.general"
+      "severity": "medium",
+      "kind": "hardcoded-string",
+      "string": "VỖ NHẸ / VỠ NHẸ — see note",
+      "where": "settings.general",
+      "note": "CORRECTED 2026-08-19, twice, and the correction is the useful part. First filed as 'VO NHE = lightly shattered', an absurd rendering of TAP. Cropping at 2x showed the vowel carries a circumflex, making it 'vo nhe' = pat gently, which is a perfectly reasonable rendering of TAP. Cropping again at 8x it is STILL ambiguous: there is a circumflex above the O and a tilde offset to its right, which is either Ỗ (circumflex+tilde) or Ỡ (horn+tilde) depending on how this condensed font stacks marks. One diacritic separates 'pat gently' from 'lightly broken'. WHAT IS ACTUALLY REPORTABLE: the string is NOT IN THE SHEET AT ALL - checked both spellings through the panel's own sheet lookup, no exact match, nearest was 'Light Ammo' at 46%. It is hardcoded, so no translator can review or fix it whatever it says. That is the defect. The reading itself needs a native speaker or the source string, and no amount of magnification will settle it. The general lesson, now in techniques.zoomResolvesPresenceNotIdentity: zooming reliably answers 'is a mark there' and 'does the text fit'. It does not reliably answer 'which mark is it', and a scan must not pretend otherwise.",
+      "relatedTo": [
+        "stringsNotInSheet"
       ],
-      "expected": "CHẠM / NHẤN",
-      "note": "'vo' is to break or shatter and 'nhe' is slight, so this reads as 'lightly shattered'. The English is TAP, the touch gesture. It is the SELECTED option on three separate rows - ADS Mode, QuickChat and Emote - so it is the first thing a Vietnamese player reads in Settings, three times over. GIU for Hold beside it is correct, so this is one wrong string rather than a mistranslated row. Verified by cropping at 3x.",
       "foundOn": "2026-08-19"
     },
     "adsAcronymReadAsAdvertsVietnamese": {
@@ -2084,6 +2086,14 @@
       "kind": "product-decision",
       "where": "lobby.modeSelect",
       "note": "LIGHTHOUSE is left in English in Vietnamese and transliterated in Thai as 'lai-hao'. Neither is wrong on its own; together they show there is no recorded decision about whether map names are translated, transliterated or left alone, so each language has made its own. One decision to take, not a defect to file per language.",
+      "foundOn": "2026-08-19"
+    },
+    "stringsNotInSheet": {
+      "language": "Vietnamese",
+      "severity": "medium",
+      "kind": "process",
+      "where": "settings.*",
+      "note": "The Vietnamese scan reported ten on-screen strings with no entry in the sheet at all, and the TAP option is one of them. Hardcoded UI text is invisible from the spreadsheet side, so it is never translated, never reviewed and never shows up in a coverage count - it can only be found by reading the screen. Worth reconciling as a batch rather than string by string.",
       "foundOn": "2026-08-19"
     }
   },

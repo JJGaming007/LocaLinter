@@ -4,6 +4,7 @@ const { runChecks } = require('./checks');
 const { perceptualHash, hammingDistance, size: pngSize } = require('./png');
 const { norm } = require('./sheet');
 const memory = require('./memory');
+const { cropAndZoom } = require('./zoom');
 const baseline = require('./baseline');
 
 // Findings that are a claim about *which language* a string is in. These are
@@ -977,6 +978,31 @@ class Crawler {
     const wanted = this.pickerEntryFor(this.target.header);
     if (!wanted) return false;
 
+    // Drive it by looking, not by replaying coordinates. The recorded step list
+    // below is kept only as a fallback: it assumes the app is sitting where it
+    // was when someone wrote it, and when it is not — a promo over the lobby, a
+    // shifted layout — every tap after the first miss lands somewhere arbitrary
+    // while the procedure still reports success.
+    if (this.cfg.modelDrivenNavigation !== false) {
+      const hints = Object.entries((this.route && this.route.hazards) || {})
+        .filter(([k]) => k !== '$comment')
+        .map(([, v]) => String(v).split('.')[0] + '.')
+        .slice(0, 6);
+
+      const ok = await this.pursue(
+        `Set the game's account language to "${wanted}". It is under Settings (the gear icon) on the Account tab, `
+        + 'behind the CHANGE button on the Language row, which opens a scrolling list of languages. '
+        + `Select "${wanted}" in that list so its checkbox is ticked, then press the confirm button. `
+        + 'You are done only once the list is closed and the Language row shows the new language.',
+        { maxSteps: 16, hints }
+      );
+      if (ok) {
+        this.run.log('Language switch done.');
+        return this.finishLanguageSwitch(proc, wanted);
+      }
+      this.run.log('Falling back to the recorded steps for the language switch.', 'warn');
+    }
+
     this.run.log(`Setting the game's language to ${wanted} using the route map.`);
     for (const step of proc.steps || []) {
       if (this.run.stopRequested) return false;
@@ -1254,6 +1280,200 @@ class Crawler {
     }
     this.run.log(`${needle} is selected.`);
     return true;
+  }
+
+  /**
+   * The part of the language switch that stays scripted, on purpose.
+   *
+   * The restart and the read-back are not navigation and are not a matter of
+   * judgement: the account language reverts intermittently, so it is confirmed
+   * from Settings whichever way the switch was driven, and a mismatch stops the
+   * run rather than scanning a language nobody asked for.
+   */
+  async finishLanguageSwitch(proc, wanted) {
+    const steps = (proc && proc.steps) || [];
+    if (steps.some((s) => s.action === 'restart' || s.restart)) {
+      if (!(await this.restartApp('so the UI stops rendering the language it launched with'))) return false;
+      await sleep(3000);
+      await this.clearAutoDismissModals(await this.settleOnly());
+    }
+    const verify = steps.find((s) => s.verifyLanguageApplied);
+    if (!verify) return true;
+    const ok = await this.verifyLanguageApplied(wanted, verify);
+    return ok || verify.onMismatch !== 'abort';
+  }
+
+  /**
+   * Chase a goal by looking, deciding and acting, one step at a time.
+   *
+   * The general replacement for writing procedures down. A recorded step list
+   * assumes the app is where it was when someone wrote it; on this title it
+   * usually is not, and the failure is silent — the taps land somewhere, the
+   * script reports success, and the run continues in the wrong place. The
+   * language switch failed that way repeatedly.
+   *
+   * Here nothing is assumed between steps. Screenshot, decide, act, screenshot
+   * again. It costs a call per step, which is the price of not being wrong
+   * about where you are.
+   *
+   * The route map is still consulted, for the one thing looking cannot supply:
+   * an action the map forbids is refused however sensible it looked, and
+   * hazards are passed in as things worth knowing.
+   */
+  async pursue(goal, { maxSteps = 12, hints = [] } = {}) {
+    if (!this.adb || !this.analyzer) return false;
+    const size = this.deviceSize || { width: 1080, height: 1920 };
+    const history = [];
+    let lastSig = null;
+    let stalled = 0;
+
+    this.run.log(`Working towards: ${goal}`);
+
+    for (let step = 0; step < maxSteps; step++) {
+      if (this.run.stopRequested) return false;
+
+      const cap = await this.settleOnly();
+      const sig = this.signature(cap);
+      if (sig && sig === lastSig) {
+        stalled += 1;
+        if (stalled >= 3) {
+          this.run.log('The screen has stopped responding to anything tried here.', 'warn');
+          return false;
+        }
+      } else {
+        stalled = 0;
+      }
+      lastSig = sig;
+
+      let move;
+      try {
+        move = await this.analyzer.decideNextAction(cap.png, goal, history, hints);
+      } catch (e) {
+        this.run.log(`Could not decide what to do next: ${e.message}`, 'warn');
+        return false;
+      }
+      if (!move) return false;
+
+      if (move.action === 'done') {
+        this.run.log(`Reached it: ${move.why}`);
+        return true;
+      }
+      if (move.action === 'stuck') {
+        this.run.log(`Cannot get there from this screen: ${move.why}`, 'warn');
+        return false;
+      }
+      if (move.action === 'wait') {
+        history.push('waited for the screen to settle');
+        await sleep(2000);
+        continue;
+      }
+
+      // The one veto looking cannot supply.
+      const known = this.routeControlIndex(this.currentScreenId || '');
+      const hit = known.find((k) => move.x != null
+        && Math.hypot(k.x - move.x * size.width, k.y - move.y * size.height) < 48);
+      if (hit && this.isBlocked(hit.ref)) {
+        this.run.log(`Refused "${move.target || hit.ref}" — the route map forbids it.`, 'warn');
+        history.push(`tried ${move.target || hit.ref}, refused as unsafe`);
+        continue;
+      }
+
+      try {
+        if (move.action === 'back') {
+          await this.adb.shell('input keyevent KEYCODE_BACK');
+          history.push('pressed back');
+        } else if (move.action === 'swipe' && move.x2 != null) {
+          await this.adb.swipe(
+            Math.round(move.x * size.width), Math.round(move.y * size.height),
+            Math.round(move.x2 * size.width), Math.round(move.y2 * size.height), 500
+          );
+          history.push(`swiped ${move.target || ''}`.trim());
+        } else if (move.x != null) {
+          await this.tapAt(move.x * size.width, move.y * size.height);
+          history.push(`tapped ${move.target || `${move.x.toFixed(2)},${move.y.toFixed(2)}`}`);
+        } else {
+          continue;
+        }
+      } catch (e) {
+        this.run.log(`Could not ${move.action}: ${e.message}`, 'warn');
+        return false;
+      }
+      this.run.log(`${move.action} ${move.target ? `"${move.target}"` : ''} — ${move.why}`);
+      await sleep(this.cfg.settleMs);
+    }
+
+    this.run.log(`Gave up on "${goal}" after ${maxSteps} steps.`, 'warn');
+    return false;
+  }
+
+  /**
+   * Look again at the findings that were decided on a few pixels.
+   *
+   * Nine of the issue types are judgements about rendering rather than meaning
+   * — truncation, overflow, clipping, overlap, contrast, mojibake, wrong
+   * glyphs. All of them are settled at full-screen size on marks a few pixels
+   * tall, and that is exactly where a scan starts inventing defects. A Thai
+   * tone mark or a Vietnamese hook is at the limit of what is visible in a
+   * 2400x1080 frame.
+   *
+   * So each one gets cropped, magnified and looked at again. Driven by hand
+   * this retracted two findings and confirmed a third, and the two it retracted
+   * were correctly spelled strings — precisely the kind of mistake that makes a
+   * translator stop trusting the whole report.
+   *
+   * Semantic findings are left alone: whether "Store" was translated as a verb
+   * is not a question magnification can answer, and paying for a call to ask it
+   * would be waste.
+   */
+  async confirmUnderMagnification(issues, cap) {
+    if (!this.cfg.zoomVerify || !this.analyzer || !cap || !cap.png) return issues;
+
+    const PIXEL_JUDGEMENTS = new Set([
+      'truncated', 'overflow_horizontal', 'overflow_vertical', 'offscreen',
+      'overlap', 'clipped_by_art', 'unreadable_contrast', 'mojibake', 'wrong_font_glyphs',
+    ]);
+    const budget = Number(this.cfg.zoomVerifyMax) || 6;
+
+    const out = [];
+    let checked = 0, dropped = 0;
+    for (const issue of issues) {
+      const wants = PIXEL_JUDGEMENTS.has(issue.type) && issue.rect && checked < budget;
+      if (!wants) { out.push(issue); continue; }
+
+      const crop = cropAndZoom(cap.png, issue.rect);
+      if (!crop) { out.push(issue); continue; }
+      checked += 1;
+
+      let verdict;
+      try {
+        verdict = await this.analyzer.verifyFinding(crop.buffer, issue, { language: this.target.header });
+      } catch (e) {
+        this.run.log(`Could not re-check "${issue.text}": ${e.message}`, 'warn');
+        out.push(issue);
+        continue;
+      }
+
+      if (!verdict.holds) {
+        dropped += 1;
+        this.run.log(`Dropped "${issue.text}" (${issue.type}) — at ${crop.factor}x it does not hold: ${verdict.why}`);
+        continue;
+      }
+      out.push({
+        ...issue,
+        severity: verdict.severity || issue.severity,
+        text: verdict.text || issue.text,
+        confidence: 'certain',
+        zoomVerified: crop.factor,
+      });
+    }
+
+    if (checked) {
+      this.run.log(
+        `Re-checked ${checked} rendering finding${checked === 1 ? '' : 's'} magnified` +
+        (dropped ? `; ${dropped} did not survive a closer look.` : '; all held up.')
+      );
+    }
+    return out;
   }
 
   /**
@@ -1640,6 +1860,10 @@ class Crawler {
   }
 
   async analyzeScreen(cap, screenId, depth, pathLabels) {
+    // Where we are, for anything that needs the route map's opinion about this
+    // screen while it is being worked on — the veto in pursue(), in particular.
+    this.currentScreenId = screenId;
+
     // Never spend a vision call, or file findings, against something that is
     // not the app under test.
     if (!(await this.ensureAppInForeground())) {
@@ -1798,6 +2022,7 @@ class Crawler {
 
     let deduped = dedupe(issues);
     deduped = this.markKnownIssues(deduped);
+    deduped = await this.confirmUnderMagnification(deduped, cap);
     if (this.mem) {
       const { kept, removed } = memory.filterDismissed(this.mem, deduped);
       if (removed) this.run.log(`Ignored ${removed} finding${removed === 1 ? '' : 's'} you dismissed on an earlier scan.`);

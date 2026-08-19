@@ -453,12 +453,12 @@ function pickOverrides(options) {
   if (!options || typeof options !== 'object') return out;
   const numeric = [
     'maxScreens', 'maxActions', 'maxDepth', 'settleMs', 'scrollSteps', 'longPressMs', 'bridgePort',
-    'maxMinutes', 'stopAfterHighIssues',
+    'maxMinutes', 'stopAfterHighIssues', 'zoomVerifyMax',
   ];
   for (const k of numeric) {
     if (options[k] != null && Number.isFinite(Number(options[k]))) out[k] = Number(options[k]);
   }
-  for (const k of ['visionEnabled', 'scrollProbe', 'longPressProbe', 'routeSetLanguage']) {
+  for (const k of ['visionEnabled', 'scrollProbe', 'longPressProbe', 'routeSetLanguage', 'zoomVerify', 'modelDrivenNavigation']) {
     if (typeof options[k] === 'boolean') out[k] = options[k];
   }
   for (const k of ['androidPackage', 'model', 'effort', 'baseUrl', 'extraChecks']) {

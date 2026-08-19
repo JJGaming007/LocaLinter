@@ -80,6 +80,22 @@ const RESULT_SCHEMA = {
           key: { type: 'string', description: 'Localization key from the supplied candidates, or "".' },
           expected: { type: 'string', description: 'What the sheet says it should be, or "".' },
           message: { type: 'string', description: 'One or two sentences: what is wrong and what a fixer should do.' },
+          // Without this there is nothing to crop around, and the whole
+          // magnified second look is impossible. Optional, because a finding
+          // about a string the model read but cannot place is still worth
+          // having — it just cannot be double-checked.
+          rect: {
+            type: 'object',
+            description: 'Where the offending string sits, as fractions of the image. Omit only if you cannot place it.',
+            additionalProperties: false,
+            required: ['x', 'y', 'w', 'h'],
+            properties: {
+              x: { type: 'number', description: 'Left edge, 0 = left of image, 1 = right.' },
+              y: { type: 'number', description: 'Top edge, 0 = top of image, 1 = bottom.' },
+              w: { type: 'number', description: 'Width as a fraction of the image width.' },
+              h: { type: 'number', description: 'Height as a fraction of the image height.' },
+            },
+          },
         },
       },
     },
@@ -521,6 +537,189 @@ If it is visible, give the centre of the row as fractions of the image: x 0 is t
       return { x: p.x, y: p.y };
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Given a goal and the screen in front of us, decide the single next action.
+   *
+   * This replaces writing the steps down. A recorded procedure — tap the gear,
+   * tap Account, tap Change, find the row — assumes the app is where it was
+   * when someone wrote it, and on this title it usually is not: a promo covers
+   * the lobby, a list re-anchors, a layout shifts, and every tap after the
+   * first missed one lands somewhere arbitrary while the script reports
+   * success. That failed repeatedly and in silence.
+   *
+   * Looking before each move costs a call and cannot fail that way. The model
+   * gets the goal, the current screen and what has already been tried, and
+   * returns one action. The caller executes it and looks again.
+   *
+   * `history` matters more than it looks: without it the model proposes the
+   * same tap forever when a screen does not respond.
+   */
+  async decideNextAction(png, goal, history = [], hints = []) {
+    const message = await this._send(() => this._messages.stream({
+      ...this._common(),
+      model: this.model,
+      max_tokens: 1500,
+      thinking: { type: 'adaptive' },
+      output_config: {
+        effort: 'medium',
+        format: {
+          type: 'json_schema',
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['action', 'why'],
+            properties: {
+              action: {
+                type: 'string',
+                enum: ['tap', 'swipe', 'back', 'wait', 'done', 'stuck'],
+                description: 'done when the goal is visibly achieved; stuck when nothing on this screen can advance it.',
+              },
+              x: { type: 'number', description: 'Tap point or swipe start, 0-1 across the image.' },
+              y: { type: 'number', description: 'Tap point or swipe start, 0-1 down the image.' },
+              x2: { type: 'number', description: 'Swipe end, 0-1 across.' },
+              y2: { type: 'number', description: 'Swipe end, 0-1 down.' },
+              target: { type: 'string', description: 'What you are aiming at, in a few words.' },
+              why: { type: 'string', description: 'One sentence: why this advances the goal.' },
+            },
+          },
+        },
+      },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/png', data: png.toString('base64') } },
+            {
+              type: 'text',
+              text: `You are driving a game on a phone over adb, one action at a time, to reach a goal. This screenshot is the screen right now.
+
+GOAL: ${goal}
+
+${history.length
+  ? `What you have already done, oldest first:\n${history.map((h, i) => `  ${i + 1}. ${h}`).join('\n')}\n\nIf the last action changed nothing, do NOT repeat it — try a different control, or scroll to bring something else into view.`
+  : 'Nothing has been tried yet.'}
+${hints.length ? `\nWorth knowing about this app:\n${hints.map((h) => `  - ${h}`).join('\n')}\n` : ''}
+Answer with ONE action:
+
+- tap    — give x,y at the centre of the control. Only tap something you can actually see.
+- swipe  — give x,y to start and x2,y2 to end. To reveal items ABOVE the visible ones, start in the MIDDLE of the list and drag DOWNWARD; starting at the very edge of a panel usually lands on its frame and does nothing.
+- back   — the system back button. Avoid it on a main or home screen, where it usually offers to quit.
+- wait   — the screen is mid-animation or loading.
+- done   — the goal is visibly achieved on this screen. Do not say done in the hope that it worked.
+- stuck  — nothing here can advance the goal.
+
+Coordinates are fractions of the image: x 0 is the left edge and 1 the right, y 0 is the top and 1 the bottom.
+
+Prefer the smallest step that makes progress, and say plainly in "why" what you expect to happen — if the next screenshot does not show it, that is the signal you were wrong.`,
+            },
+          ],
+        },
+      ],
+    }).finalMessage());
+
+    this._track(message.usage);
+    const text = (message.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    try {
+      const p = JSON.parse(text);
+      if (!p || typeof p.action !== 'string') return null;
+      return {
+        action: p.action,
+        x: Number.isFinite(p.x) ? p.x : null,
+        y: Number.isFinite(p.y) ? p.y : null,
+        x2: Number.isFinite(p.x2) ? p.x2 : null,
+        y2: Number.isFinite(p.y2) ? p.y2 : null,
+        target: String(p.target || ''),
+        why: String(p.why || ''),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Look again at one finding, magnified, and keep it or drop it.
+   *
+   * Every defect about pixels rather than meaning — a clipped descender, a
+   * missing tone mark, text touching its border — is decided at full-screen
+   * size on a few pixels, and that is where a scan invents things. Driven by
+   * hand on the Thai pass this second look retracted two findings and confirmed
+   * a third; the two it retracted were correctly spelled strings whose marks
+   * were simply below the resolution being judged at.
+   *
+   * The prompt is written to make retracting easy. A report that is mostly
+   * right is worth less than a shorter one that is entirely right, because the
+   * first wrong entry is where a translator stops believing the rest.
+   */
+  async verifyFinding(cropPng, issue, context = {}) {
+    const message = await this._send(() => this._messages.stream({
+      ...this._common(),
+      model: this.model,
+      max_tokens: 800,
+      output_config: {
+        format: {
+          type: 'json_schema',
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['holds', 'why'],
+            properties: {
+              holds: { type: 'boolean', description: 'Is the reported defect really there at this magnification?' },
+              why: { type: 'string', description: 'One sentence. If it does not hold, say what is actually there.' },
+              severity: { type: 'string', enum: ['high', 'medium', 'low'], description: 'Revised severity, if it holds.' },
+              text: { type: 'string', description: 'The string as it actually reads at this size, if different.' },
+            },
+          },
+        },
+      },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/png', data: cropPng.toString('base64') } },
+            {
+              type: 'text',
+              text: `This is a magnified crop of one small part of a game screen — the area around a string that a first pass, looking at the whole screen at once, reported as a defect.
+
+The report was:
+
+  type:     ${issue.type}
+  string:   ${JSON.stringify(issue.text || '')}
+  where:    ${issue.where || 'unspecified'}
+  severity: ${issue.severity}
+  claim:    ${issue.message || ''}
+${context.language ? `  language: ${context.language}\n` : ''}
+Decide whether that defect is really there, now that you can see it properly.
+
+Retract it — holds:false — if any of these is true:
+- the string is complete and correctly spelled, and the marks the first pass thought were missing are present at this size;
+- the text fits inside its container, with the descenders and diacritics inside the border, even if it is close;
+- the "overlap" is a background pattern, a shadow, a border or artwork rather than another string;
+- what looked like corruption is a font style, an icon, or a script you can read correctly here.
+
+Keep it — holds:true — only if you can point at the defect in this image. Truncation means a word actually stops; overflow means glyphs cross the container edge; a missing mark means you can see the bare vowel.
+
+Be willing to retract. The first pass was guessing from a few pixels and this is the check on it, so agreeing by default makes the check worthless. If the crop does not show enough to decide, retract rather than guess.`,
+            },
+          ],
+        },
+      ],
+    }).finalMessage());
+
+    this._track(message.usage);
+    const text = (message.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    try {
+      const p = JSON.parse(text);
+      return {
+        holds: p.holds !== false,
+        why: String(p.why || ''),
+        severity: ['high', 'medium', 'low'].includes(p.severity) ? p.severity : null,
+        text: typeof p.text === 'string' && p.text.trim() ? p.text.trim() : null,
+      };
+    } catch {
+      return { holds: true, why: '', severity: null, text: null };   // unparseable: leave it alone
     }
   }
 

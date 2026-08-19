@@ -30,7 +30,7 @@
       'ds-mode', 'ds-device', 'ds-sheet', 'ds-language', 'ds-package', 'ds-build', 'ds-route', 'ds-route-card', 'ds-probe', 'ds-start', 'ds-stop',
       'ds-advanced-toggle', 'ds-advanced', 'ds-probe-out', 'ds-agent-out', 'ds-target-status',
       'ds-max-screens', 'ds-max-actions', 'ds-max-depth', 'ds-model', 'ds-effort', 'ds-adb-path',
-      'ds-vision', 'ds-scroll', 'ds-longpress', 'ds-blocked', 'ds-base-url', 'ds-extra-checks',
+      'ds-vision', 'ds-scroll', 'ds-longpress', 'ds-zoom-verify', 'ds-blocked', 'ds-base-url', 'ds-extra-checks',
       'ds-settle', 'ds-scroll-steps', 'ds-longpress-ms', 'ds-max-minutes', 'ds-stop-high',
       'ds-route-lang', 'ds-only', 'ds-focus', 'ds-rules', 'ds-steps',
       'ds-validate', 'ds-validate-out', 'ds-reset-defaults', 'ds-lang-queue', 'ds-queue-wrap',
@@ -490,6 +490,7 @@
     el.dsMaxActions.value = c.maxActions;
     el.dsMaxDepth.value = c.maxDepth;
     el.dsVision.checked = c.visionEnabled !== false;
+    if (el.dsZoomVerify) el.dsZoomVerify.checked = c.zoomVerify !== false;
     el.dsScroll.checked = c.scrollProbe !== false;
     el.dsLongpress.checked = c.longPressProbe !== false;
     el.dsRouteLang.checked = c.routeSetLanguage !== false;
@@ -865,6 +866,7 @@
       model: el.dsModel.value,
       effort: el.dsEffort.value,
       visionEnabled: el.dsVision.checked,
+      zoomVerify: el.dsZoomVerify ? el.dsZoomVerify.checked : true,
       scrollProbe: el.dsScroll.checked,
       longPressProbe: el.dsLongpress.checked,
       routeSetLanguage: el.dsRouteLang.checked,

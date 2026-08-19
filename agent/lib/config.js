@@ -50,6 +50,19 @@ const DEFAULTS = {
   //
   // What is left is the set that ends the run or destroys the account it runs
   // on, which no amount of test credit makes recoverable.
+  // Re-examine rendering findings on a magnified crop before reporting them.
+  // Truncation, overflow and missing diacritics are all decided on a few pixels
+  // in a 2400x1080 frame, which is where a scan invents defects; a second look
+  // at 4x retracts the ones that were never there. Costs one call per finding
+  // checked, capped per screen.
+  // Reach a goal by looking at the screen and deciding the next move, instead
+  // of replaying recorded coordinates. Recorded steps assume the app is where
+  // it was when they were written, and fail silently when it is not.
+  modelDrivenNavigation: true,
+
+  zoomVerify: true,
+  zoomVerifyMax: 6,
+
   blockedLabels: [
     'delete account', 'delete', 'remove account', 'reset progress', 'wipe',
     'log ?out', 'sign ?out', 'logout', 'quit', 'exit game', 'uninstall'
