@@ -568,11 +568,28 @@ class Crawler {
     const near = (a, b) => Number.isFinite(a.x) && Number.isFinite(a.y)
       && Math.hypot(a.x - b.x, a.y - b.y) < 48;
 
+    // On a root screen there is nothing behind, so going back opens the
+    // exit-game dialog. The model cannot tell that from a screenshot — a back
+    // arrow looks like a back arrow — and it proposed one every single pass: the
+    // dialog opened, exitConfirm answered NO, the crawl landed on the lobby and
+    // the arrow was proposed again. Three screens in ten minutes, nothing broken
+    // and nothing gained.
+    const match0 = this.routeScreenFor.get(screenId);
+    const backExits = !!(match0 && match0.def && match0.def.backExits);
+    const goesBack = (a) => a.kind === 'back'
+      || /\b(back|return|previous|close)\b/i.test(String(a.label || ''))
+      || /\.back$/i.test(String(a.label || ''));
+
     const kept = [];
     let vetoed = 0;
     for (const a of proposals) {
       const match = known.find((k) => near(a, k));
       const label = match ? match.ref : a.label;
+      if (backExits && goesBack(a)) {
+        this.run.skipped.push({ screenId, label, reason: 'going back from here opens the exit-game dialog' });
+        vetoed += 1;
+        continue;
+      }
       if (this.isBlocked(label) || this.isBlocked(a.label)) {
         this.run.skipped.push({ screenId, label, reason: 'matches a blocked-label pattern' });
         vetoed += 1;

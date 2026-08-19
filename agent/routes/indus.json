@@ -49,6 +49,14 @@
             "Japanese"
           ],
           "scope": "Thai glyph-coverage pass (PASSED); lobby, dailyLoginRewards, Missions and Settings driven in Thai; language-persistence trial across four restarts; language-picker technique corrected"
+        },
+        {
+          "date": "2026-08-19",
+          "pass": "vietnamese",
+          "languages": [
+            "Vietnamese"
+          ],
+          "scope": "Vietnamese glyph-coverage pass (PASSED, retiring the last script risk); lobby by hand and Settings through the model-led crawler; back-on-root veto added"
         }
       ]
     },
@@ -231,7 +239,9 @@
           0.903,
           0.722
         ]
-      }
+      },
+      "backExits": true,
+      "$backExits": "The lobby is the root: there is nothing to go back to, so both the Android back key and the on-screen back arrow open the exit-game confirmation. Added 2026-08-19 after a model-led run spent its whole action budget on it - the model proposed the back arrow, the dialog opened, exitConfirm closed it with NO, the crawl returned to the lobby and proposed the back arrow again. Nothing broke and nothing progressed: three screens in ten minutes. A proposal to go back from a screen marked backExits is now refused."
     },
     "settings": {
       "signature": {
@@ -484,7 +494,6 @@
         "untested": [
           "TAGALOG",
           "MALAY",
-          "VIETNAMESE",
           "KOREAN",
           "CHINESE (TRADITIONAL)",
           "CHINESE (SIMPLIFIED)",
@@ -496,7 +505,7 @@
           "INDONESIAN",
           "RUSSIAN"
         ],
-        "$untested": "Languages never yet driven on the device. THAI was driven on 2026-08-19 and is no longer untested: glyph coverage PASSED (knownIssues.thaiGlyphCoverage). VIETNAMESE is now the highest-value next target - the only remaining script family with genuinely unproven rendering, with stacked tone-plus-vowel marks and the same risk profile Thai had before it was tested. Korean and both Chinese variants share the proven CJK font, so their risk is grammatical rather than typographic. MALAY and CHINESE (TRADITIONAL) were briefly checked in the picker as intermediate two-hop selections but were never applied or scanned, and remain untested.",
+        "$untested": "Languages never yet driven. NO SCRIPT RISK REMAINS: Thai and Vietnamese were both driven on 2026-08-19 and both render correctly, CJK was proven on 2026-08-18, and everything else in the list is Latin. What is left is wording, not glyphs — so the next targets should be chosen by commercial reach rather than by script. Korean and the two Chinese variants are the obvious ones: QUAD, Claim and Inventory each break in most languages tested so far, and there is no reason to expect them to survive there.",
         "$reanchor": "The picker opens with the CHECKED entry at the top of the viewport, which makes it look as though that entry is the first in the list and only the four below it exist. It is not - everything above is still there, reachable by dragging from inside the list. Recorded because it fooled a whole session: the appearance is convincing enough that it was taken for a hard limit and filed as a defect."
       }
     },
@@ -1544,14 +1553,18 @@
       "status": "PASS",
       "testedOn": "2026-08-19",
       "$comment": "Thai renders completely - no tofu, no fallback boxes, no dropped marks - including the stacked diacritics that made it the build's biggest recorded glyph risk. Verified on thua-pai (mai ek over sara a), khwam-wai-to-khwam-ru-suek (sara uu with mai tri), ri-set-kan-tang-kha (mai taikhu plus mai tho over sara a) and ang-sit-thi-thang-mot (thanthakhat plus a stacked mark). The Thai font ships and composes correctly. Retires the risk flagged by the 2026-08-18 second pass.",
-      "remainingScriptRisk": [
-        "VIETNAMESE"
-      ]
+      "remainingScriptRisk": []
     },
     "purchaseConfirmations": {
       "note": "The Google Play purchase sheet is a system dialog drawn over the game, not a game screen: its chrome is in the DEVICE language and only the product name and price come from the build. Do not report the sheet's own wording as a localization defect - read the product name, the price format and whatever confirmation the game shows afterwards. Currency and grouping follow the account REGION, not the language; see checkHints.currencyFollowsRegion.",
       "mark": "known",
       "severity": "low"
+    },
+    "vietnameseGlyphCoverage": {
+      "status": "PASS",
+      "testedOn": "2026-08-19",
+      "$comment": "Vietnamese renders completely, including the stacked two-mark vowels it uses far more often than Thai: NHIEM VU (E with circumflex AND dot below), DUOC XEP HANG (O horn + dot below, E circumflex + acute), CUA HANG (U horn + hook above), HANG TON KHO (O circumflex + grave), KHANG DINH (A breve + hook, I dot below, D stroke). No tofu, no dropped marks, at heading and body sizes alike.",
+      "remainingScriptRisk": []
     }
   },
   "knownFindings": {
@@ -1951,6 +1964,127 @@
       "kind": "negative-result",
       "note": "Defects that repeat across languages and specifically DO NOT repeat in Thai - keep these so they are not re-raised. (1) The Japanese day-counter order bug does not occur: Japanese renders 日目4 with the numeral misplaced, Thai renders wan-thi 4..7 correctly, so the <label><n> concatenation happens to be right for Thai. (2) The pt-BR season-banner overflow does not occur: the Thai season banner fits the card comfortably where TEMPORADA TERMINADA clips its final A. (3) The Thai season banner and Claim All button were both raised as spelling/fit defects at full-screen resolution and both are correct - see techniques.thaiDiacriticsNeedCropping.",
       "foundOn": "2026-08-19"
+    },
+    "tapSenseVietnamese": {
+      "language": "Vietnamese",
+      "severity": "high",
+      "string": "VỠ NHẸ",
+      "where": [
+        "settings.general"
+      ],
+      "expected": "CHẠM / NHẤN",
+      "note": "'vo' is to break or shatter and 'nhe' is slight, so this reads as 'lightly shattered'. The English is TAP, the touch gesture. It is the SELECTED option on three separate rows - ADS Mode, QuickChat and Emote - so it is the first thing a Vietnamese player reads in Settings, three times over. GIU for Hold beside it is correct, so this is one wrong string rather than a mistranslated row. Verified by cropping at 3x.",
+      "foundOn": "2026-08-19"
+    },
+    "adsAcronymReadAsAdvertsVietnamese": {
+      "language": "Vietnamese",
+      "severity": "high",
+      "string": "CHỈ QUẢNG CÁO",
+      "where": "settings.general",
+      "expected": "CHỈ KHI NGẮM",
+      "note": "The Gyroscope row reads Off / 'Ads only' / Always on: 'quang cao' means advertising, and ADS here is aim-down-sights. What makes it filable rather than arguable is that the row DIRECTLY ABOVE keeps 'Che do ADS' as an acronym - the same three letters are treated as an acronym in one row and expanded to 'advertisements' in the next, on one screen. Verified by cropping at 3x.",
+      "foundOn": "2026-08-19"
+    },
+    "supportSenseVietnamese": {
+      "language": "Vietnamese",
+      "severity": "medium",
+      "string": "ỦNG HỘ",
+      "where": "settings.account",
+      "expected": "HỖ TRỢ",
+      "note": "'ung ho' is to endorse, back or donate to. The button opens a help desk.",
+      "foundOn": "2026-08-19"
+    },
+    "releaseSenseVietnamese": {
+      "language": "Vietnamese",
+      "severity": "medium",
+      "string": "GIẢI PHÓNG",
+      "where": "settings.*",
+      "expected": "THẢ",
+      "note": "'giai phong' is to liberate or free up - the sense used for freeing memory, not for letting go of a button.",
+      "foundOn": "2026-08-19"
+    },
+    "aboutTabVietnamese": {
+      "language": "Vietnamese",
+      "severity": "medium",
+      "string": "Về",
+      "where": "settings.tabAbout",
+      "expected": "Giới thiệu / Thông tin",
+      "note": "'ve' alone is the preposition 'about/regarding', grammatically incomplete as a menu item. Fourth language to fail this pattern after German 'Um', Japanese '一般的な' and Vietnamese's own 'DUOC XEP HANG'.",
+      "relatedTo": [
+        "aboutTabGerman",
+        "generalTabJapanese",
+        "rankedPassiveVietnamese"
+      ],
+      "foundOn": "2026-08-19"
+    },
+    "rankedPassiveVietnamese": {
+      "language": "Vietnamese",
+      "severity": "medium",
+      "string": "ĐƯỢC XẾP HẠNG",
+      "where": "lobby.ranked",
+      "expected": "XẾP HẠNG",
+      "note": "A passive verb phrase, 'to be ranked', where the mode name is a noun. The stray 'DUOC' turns a menu item into a sentence fragment. Its siblings (NHIEM VU, CUA HANG, VU KHI) are all correctly nouns, which is what makes it clean evidence for checkHints.standaloneNavLabels.",
+      "foundOn": "2026-08-19"
+    },
+    "quadSenseVietnamese": {
+      "language": "Vietnamese",
+      "severity": "high",
+      "string": "TỨ GIÁC",
+      "where": "lobby.modeSelect",
+      "expected": "ĐỘI 4 / SQUAD",
+      "note": "'tu giac' is a quadrilateral, the four-sided polygon. QUAD here is a four-player squad. Thai makes the IDENTICAL substitution with 'si-liam'. Two unrelated languages reaching the same wrong noun is not two translator mistakes - it is a four-letter source string shipped with no context.",
+      "relatedTo": [
+        "quadSenseAndSpellingThai"
+      ],
+      "foundOn": "2026-08-19"
+    },
+    "claimSenseVietnamese": {
+      "language": "Vietnamese",
+      "severity": "high",
+      "string": "KHẲNG ĐỊNH",
+      "where": "lobby.claim",
+      "expected": "NHẬN / NHẬN THƯỞNG",
+      "note": "'khang dinh' is to affirm or assert a statement. With Thai 'riak-rong' and 'ang-sit-thi' and Japanese '請求', that is FOUR wrong senses of Claim across three languages, and not one of them means 'collect your reward'. The strongest case in this file for splitting or annotating a source key.",
+      "relatedTo": [
+        "claimSenseThai"
+      ],
+      "foundOn": "2026-08-19"
+    },
+    "inventoryWarehouseSense": {
+      "language": [
+        "Vietnamese",
+        "Japanese"
+      ],
+      "severity": "medium",
+      "strings": [
+        "HÀNG TỒN KHO",
+        "在庫"
+      ],
+      "where": "lobby.inventory",
+      "expected": "TÚI ĐỒ / KHO ĐỒ  (Vietnamese);  持ち物 / インベントリ  (Japanese)",
+      "note": "Both languages render Inventory in its ACCOUNTING sense - goods remaining in a warehouse - where the screen means a player's item bag. The Japanese half was filed on 2026-08-18 as a register question wanting a native reviewer, because one language reading a word oddly is weak evidence. A second, unrelated language making the identical substitution settles it: this is a defect, not a quality note.",
+      "foundOn": "2026-08-19"
+    },
+    "inputBlockDriftVietnamese": {
+      "language": "Vietnamese",
+      "severity": "medium",
+      "where": "settings.controls",
+      "note": "The 'Input Block' key renders four different ways, with inconsistent word order, on a single screen. A consistency defect rather than a wrong-sense one, and the sort that only surfaces when a whole screen is read at once rather than string by string.",
+      "foundOn": "2026-08-19"
+    },
+    "vietnameseNegativeResults": {
+      "language": "Vietnamese",
+      "severity": "none",
+      "kind": "negative-result",
+      "note": "Checked and correct - do not re-raise. CUA HANG for STORE is RIGHT, which is notable because German (SPEICHERN) and Thai (kep) both break that key by taking Store as a verb; the key is sound and the source string is retrievable. GIU for Hold is right where Japanese '所有' is wrong. NHIEM VU, VU KHI, MOI, THEM BAN BE, CHOI, Cap do, Gioi han hang ngay all correct and all fitting. MUA GIAI KET THUC fits the season banner comfortably, so seasonBannerOverflowPt does not reproduce here either. The rotating promo card was not compared across languages, per knownFindings guidance.",
+      "foundOn": "2026-08-19"
+    },
+    "mapNamesUndecided": {
+      "severity": "low",
+      "kind": "product-decision",
+      "where": "lobby.modeSelect",
+      "note": "LIGHTHOUSE is left in English in Vietnamese and transliterated in Thai as 'lai-hao'. Neither is wrong on its own; together they show there is no recorded decision about whether map names are translated, transliterated or left alone, so each language has made its own. One decision to take, not a defect to file per language.",
+      "foundOn": "2026-08-19"
     }
   },
   "checkHints": {
@@ -1960,7 +2094,7 @@
     "currencyFollowsRegion": "Prices render as Indian rupees (₹29.00) because the account region is India, while the UI language is Portuguese. That is correct — currency follows the account region, not the language. Do not report a currency/language mismatch as a defect; DO report a currency that does not match the region in the build stamp.",
     "unitSuffixes": "Ability stats render as '90s', '6s', '150%'. Check the separator and unit placement against locale convention rather than assuming the English form is right.",
     "playerContent": "The lobby carries a live chat line and player names (e.g. 'CrimsonEyE : all', 'InventiveAggressor'). These are user content, never localized, and must not be compared against the sheet.",
-    "ambiguousControlWords": "The highest-yield audit in any language: short ambiguous English control words produce translations that are competent renderings of a DIFFERENT word, so no length check and no spell check will ever catch them. Audit: Store, Hold, Claim, Back, Free, Match, Save, Press, Round, Draw, Scope, Change, Build, Quad, Sensitivity. Worked examples now spanning four languages. STORE -> German SPEICHERN (save data) and Thai kep (put away), while Japanese renders it correctly as ten. CLAIM -> Japanese seikyu (invoice), Thai riak-rong (demand a right) on the lobby AND ang-sit-thi (assert a legal right) in Missions: two different wrong senses of one word in one build. HOLD -> Japanese shoyu (possess). CHANGE -> Japanese henka (transformation). QUAD -> Thai si-liam (the geometric quadrilateral). BUILD -> Thai sang (the verb to create). When a key fails in one language, check it in every other - Store and Claim each failed in three languages out of four.",
+    "ambiguousControlWords": "The highest-yield audit in any language: short ambiguous English control words produce translations that are competent renderings of a DIFFERENT word, so no length check and no spell check will ever catch them. Audit: Store, Hold, Claim, Back, Free, Match, Save, Press, Round, Draw, Scope, Change, Build, Quad, Sensitivity, Tap, Release, Support, Inventory, and any ACRONYM the UI does not spell out. Worked examples now spanning four languages. STORE -> German SPEICHERN (save data) and Thai kep (put away), while Japanese renders it correctly as ten. CLAIM -> Japanese seikyu (invoice), Thai riak-rong (demand a right) on the lobby AND ang-sit-thi (assert a legal right) in Missions: two different wrong senses of one word in one build. HOLD -> Japanese shoyu (possess). CHANGE -> Japanese henka (transformation). QUAD -> Thai si-liam (the geometric quadrilateral). BUILD -> Thai sang (the verb to create). When a key fails in one language, check it in every other - Store and Claim each failed in three languages out of four. Vietnamese added four more on 2026-08-19, three of them worse than anything found before: TAP -> vo nhe (lightly shattered); ADS ONLY -> chi quang cao, the acronym read as ADVERTISEMENTS while the row above keeps ADS as an acronym; SUPPORT -> ung ho (endorse/donate); RELEASE -> giai phong (free up memory). Acronyms are the highest-risk case of all, because a translator with no screenshot cannot tell ADS from ads.",
     "standaloneNavLabels": "Navigation labels stand alone with no sentence around them, and machine translation routinely gives them the wrong part of speech. Confirmed twice: German 'Um' for About (a preposition, needs 'Über') and Japanese 一般的な for General (the adjectival form, needs 一般). Check every tab and rail label against the grammatical form its SIBLINGS take — a rail of nouns with one verb phrase in it is the tell, as with German 'Laden einlösen' beside Edelsteine and Erstellercode.",
     "numberFormatting": "Number formatting follows the account REGION, not the UI language, exactly as currency does — the pt-BR UI renders '₹2,499.00' with comma-thousands and dot-decimal because the account region is India. Do not report that as a pt-BR defect without a product decision (pt-BR convention would be '2.499,00'). What IS reportable without a decision is internal inconsistency: store.gems shows grouped prices ('₹4,999.00') beside ungrouped quantities ('x 12000') on the same screen, and missions render '10000' ungrouped. Flag the inconsistency, not the convention.",
     "staleLanguageAfterSwitch": "Parts of this build keep rendering the language the app process launched with until it is restarted — Settings labels and localized content alike (see knownIssues.settingsLanguageLeak). Any capture taken after a language change but before a restart will show stale strings that look exactly like untranslated defects. Restart the app after every language change, and treat any 'untranslated' finding gathered without one as unverified.",
@@ -1970,7 +2104,7 @@
   },
   "hazards": {
     "$comment": "States a crawl can put itself into that end or derail the run. Each was hit by hand during recording.",
-    "backOnLobbyExits": "Android BACK on the lobby opens the exit-game confirmation (screens.exitConfirm). Hit during recording: a back-press intended to close the Weapons modal fell through to the lobby and opened it, and three subsequent taps landed on the dialog instead of the intended screen. Prefer the in-screen back chevron at [0.035, 0.076] over KEYCODE_BACK, and after any back-press check for the exitConfirm signature before tapping anything else.",
+    "backOnLobbyExits": "Android BACK on the lobby opens the exit-game confirmation (screens.exitConfirm). Hit during recording: a back-press intended to close the Weapons modal fell through to the lobby and opened it, and three subsequent taps landed on the dialog instead of the intended screen. Prefer the in-screen back chevron at [0.035, 0.076] over KEYCODE_BACK, and after any back-press check for the exitConfirm signature before tapping anything else. EXTENDED 2026-08-19: this applies to the on-screen back arrow as much as to KEYCODE_BACK, and to targets the model proposes rather than only to the crawler's own dismissal logic. Screens where it holds carry backExits:true.",
     "modalSwallowsTaps": "While any modal is open every coordinate from the underlying screen is wrong. After an unexpected modal appears, re-identify the screen from a fresh capture rather than continuing the planned tap sequence.",
     "languagePickerReanchors": "The picker re-anchors the CHECKED entry to the top of the viewport a couple of seconds after a scroll settles. CORRECTED 2026-08-19: the previously recorded advice - 'capture once and tap immediately', racing the re-anchor - does NOT work and cost three mis-taps in a row (a snap back to ENGLISH mid-capture, a tap that hit MALAY, and a tap that landed on nothing). Do the OPPOSITE: let the re-anchor finish, then tap. It fires after a SCROLL, never after a TAP, so once it has fired the list is stable and a tap seconds later lands correctly. See techniques.pickerTwoHopSelection for reaching an entry far from the checked one.",
     "dailyLoginRewardsCoversLobby": "A DAILY LOGIN REWARDS modal covers the lobby after launch and after every language change, and it swallows every lobby coordinate beneath it. It ate three navigation sequences during the 2026-08-18 second pass before it was recognised. Check for screens.dailyLoginRewards (and screens.promoInterstitial) before driving any lobby coordinate, and dismiss with the modal's own close control.",

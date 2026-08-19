@@ -173,11 +173,20 @@ function makeCrawler(targetHeader = 'Portuguese (Brazil)') {
 // ── 9. Thai is tested, and the next target is named ───────────────────────
 {
   const entries = route.screens['settings.languagePicker'].entries;
-  assert.ok(!entries.untested.includes('THAI'), 'Thai was driven on 2026-08-19');
+  for (const done of ['THAI', 'VIETNAMESE']) {
+    assert.ok(!entries.untested.includes(done), `${done} was driven on 2026-08-19`);
+  }
   assert.strictEqual(route.knownIssues.thaiGlyphCoverage.status, 'PASS');
-  assert.ok(entries.untested.includes('VIETNAMESE'), 'Vietnamese is the remaining script risk');
-  assert.deepStrictEqual(route.knownIssues.thaiGlyphCoverage.remainingScriptRisk, ['VIETNAMESE']);
-  console.log('9 ok  Thai retired as a glyph risk, Vietnamese named as the next one');
+  assert.strictEqual(route.knownIssues.vietnameseGlyphCoverage.status, 'PASS');
+
+  // Both were the "biggest remaining glyph risk" in turn, and both passed. With
+  // CJK proven on 18 August and everything else Latin, nothing in this build is
+  // untested for rendering — so the next targets are chosen by reach, not script.
+  for (const k of ['thaiGlyphCoverage', 'vietnameseGlyphCoverage']) {
+    assert.deepStrictEqual(route.knownIssues[k].remainingScriptRisk, [],
+      'no script risk should remain once Thai and Vietnamese have both passed');
+  }
+  console.log('9 ok  Thai and Vietnamese both pass; no script risk left');
 }
 
 // ── 10. the model decides, the route map vetoes ───────────────────────────
@@ -213,6 +222,15 @@ function makeCrawler(targetHeader = 'Portuguese (Brazil)') {
     out.slice(2).every((a) => a.fromRoute),
     'controls the model missed are appended behind its proposals, not ahead of them'
   );
+  // Going back from the lobby opens the exit dialog, which a screenshot cannot
+  // show. Left unrefused it ate a whole run's action budget in a loop.
+  const backwards = [
+    { key: 'd', kind: 'tap', x: 100, y: 100, label: 'Back arrow', priority: 'high' },
+    { key: 'e', kind: 'back', x: 0, y: 0, label: 'go back', priority: 'high' },
+  ];
+  const noBack = c.applyRouteToProposals(backwards, 'screen-001');
+  assert.strictEqual(noBack.filter((a) => !a.fromRoute).length, 0,
+    'no proposal that goes back may survive on a screen where back exits');
   console.log('10 ok  the model proposes, the route map vetoes and tops up');
 }
 
