@@ -124,15 +124,25 @@ function makeCrawler(targetHeader = 'Portuguese (Brazil)') {
     cfg, adb: null, bridge: null, sheet: null, analyzer: null, run, route,
     target: { header: 'German', sourceHeader: 'English' },
   });
-  assert.strictEqual(c.isBlocked('lobby.play'), true);
+  // Blocked: the things that end the run or destroy the account it runs on.
+  assert.strictEqual(c.isBlocked('lobby.play'), true, 'PLAY commits the account to a live match');
   assert.strictEqual(c.isBlocked('exitConfirm.yes'), true);
-  assert.strictEqual(c.isBlocked('dailyLoginRewards.claim'), true);
   assert.strictEqual(c.isBlocked('settings.resetSettings'), true);
-  // ...but the Store catalogues are now reachable, which they were not before.
+  assert.strictEqual(c.isBlocked('settings.exitGame'), true);
+
+  // Not blocked: spending money. The account is a test one with a test card,
+  // and the purchase and confirmation dialogs carry some of the most
+  // commercially visible text in the build — the screens a localization scan
+  // most wants to read. Blocking them was hiding them.
+  assert.strictEqual(c.isBlocked('store.offers.purchase'), false, 'purchases are in scope on a test account');
+  assert.strictEqual(c.isBlocked('lobby.currencyAdd'), false, 'the currency top-up is a purchase entry point');
+  assert.strictEqual(c.isBlocked('store.bundleDetail.pricePlate'), false);
+  assert.strictEqual(c.isBlocked('Buy'), false, 'a button reading "Buy" is no longer refused on sight');
+
+  // ...and the Store catalogues stay reachable.
   assert.strictEqual(c.isBlocked('store.catGems'), false, 'store categories must be explorable');
   assert.strictEqual(c.isBlocked('store.bundleStore.view'), false);
-  assert.strictEqual(c.isBlocked('store.offers.purchase'), true, 'purchases stay blocked');
-  console.log('7 ok  dangerous taps blocked, Store catalogues opened up');
+  console.log('7 ok  run-ending taps blocked, purchases and catalogues open');
 }
 
 // ── 8. the language switch reads its own result back ──────────────────────

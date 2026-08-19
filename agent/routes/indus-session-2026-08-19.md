@@ -307,3 +307,50 @@ is the same guard this session added to the procedure.
 - The in-match HUD, still deliberately unmapped.
 - The Japanese register calls (`在庫`, `兵器`, `請求`) still want a native
   reviewer, and Thai now adds `กราฟฟิก` to that list.
+
+---
+
+## Correction, appended 19 August after the fact
+
+**The picker does not trap you, and the section above overstates the re-anchor.**
+
+A later pass concluded that the picker refuses to scroll above the selected
+entry, and filed that as a high-severity functional defect: pick Thai and
+English becomes unreachable. **That was wrong and has been retracted from the
+route map.**
+
+What actually happens is only that the picker opens with the checked entry at
+the top of the viewport, which looks exactly like that entry being first in a
+list of five. Everything above it is still there. Drag from **inside** the list
+— roughly 40% to 85% down the recorded region — and it walks straight up to
+ENGLISH at the top and stays there.
+
+The drags that "proved" the clamp had all started near the top edge of the
+recorded region, where they landed on the modal's frame instead of the list. The
+list never received the gesture, so nothing moved, at any speed.
+
+Two things worth keeping from that mistake:
+
+- **"The control did not respond" and "the app forbids this" look identical from
+  outside.** Only one of them is a defect, and the difference is a property of
+  the gesture, not of the app. Vary the gesture before concluding anything about
+  the app.
+- **The re-anchor is real but not as aggressive as recorded above.** After
+  scrolling to the top of the list, a capture taken three seconds later still
+  showed ENGLISH — no snap back. The technique that matters is not racing it or
+  waiting it out; it is dragging from inside the list and verifying the result.
+
+## Purchases are in scope, also appended
+
+Everything in the store can be tapped. The build runs on a test device with a
+test card, nothing is really charged, and the confirmation dialogs are wanted:
+they are some of the most commercially visible text in the game. The blocked
+list has been narrowed to the actions that end the run or destroy the account it
+runs on — quitting, signing out, resetting progress or settings, deleting the
+account, and PLAY, which commits the account to a live match with an abandon
+penalty. None of those are recoverable with test credit.
+
+One caveat for whoever reads the results: the Google Play sheet is a **system**
+dialog, so its chrome renders in the *device* language and only the product name
+and price come from the build. Do not file its wording as a defect. Recorded as
+`knownIssues.purchaseConfirmations`.

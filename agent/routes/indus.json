@@ -111,24 +111,19 @@
     "$comment": "Never tap these. They spend money, sign in or out, destroy settings, or drop the scan into a live match it cannot get out of. Matched against the control labels below.",
     "labels": [
       "lobby.play",
-      "lobby.currencyAdd",
-      "lobby.promoDailyPack",
       "settings.resetSettings",
       "settings.exitGame",
       "settings.account.regionChange",
       "settings.account.linkPlayGames",
       "settings.account.linkGoogle",
       "abilities.upgrade",
-      "store.*.purchase",
-      "store.*.buy",
-      "store.bundleDetail.pricePlate",
       "store.creatorCode.enterCode",
       "exitConfirm.yes",
       "dailyLoginRewards.claim",
-      "lobby.claim",
-      "weapons.*.purchase"
+      "lobby.claim"
     ],
-    "$refined": "The earlier list blocked 'store.*' wholesale, which would have kept the scan out of the seven Store catalogues entirely — the most commercially visible text in the build and the source of several confirmed findings. Only the purchase confirms are actually dangerous, so they are named. Category rails and item cards are safe and are now explored. Claim buttons are blocked not because they cost money but because they mutate account state and make a run non-repeatable."
+    "$refined": "The earlier list blocked 'store.*' wholesale, which would have kept the scan out of the seven Store catalogues entirely — the most commercially visible text in the build and the source of several confirmed findings. Only the purchase confirms are actually dangerous, so they are named. Category rails and item cards are safe and are now explored. Claim buttons are blocked not because they cost money but because they mutate account state and make a run non-repeatable.",
+    "$purchasesAllowed": "Purchase flows are IN SCOPE on this account and were unblocked on 2026-08-19 at the tester's instruction: the build is a test device with a test card, nothing is really charged, and the confirmation dialogs are themselves some of the most commercially visible text in the game - exactly the screens a localization scan should be reading. Previously blocked and now allowed: store.*.purchase, store.*.buy, weapons.*.purchase. What stays blocked is unrelated to money: things that end the run or destroy the account it runs on - quitting the game, signing out, resetting progress or settings, deleting the account, and PLAY, which commits the account to a live match with other real players and an abandon penalty. Also opened: lobby.currencyAdd, lobby.promoDailyPack, store.bundleDetail.pricePlate - the currency top-up, the daily-pack promo and the bundle price plate are all purchase entry points and were blocked for the same money reason that no longer applies."
   },
   "screens": {
     "lobby": {
@@ -458,7 +453,8 @@
         ],
         "axis": "vertical",
         "rowPitch": 0.096,
-        "$tappable": "CORRECTED 2026-08-19: region top 0.24 is the SCROLL bounds, not the TAP bounds. A row clipped by the viewport's top edge renders but does not accept taps - a tap at y~0.27 on a half-visible THAI row did nothing at all. Only tap rows sitting fully inside the region; scroll a partially visible target into full view first."
+        "$tappable": "CORRECTED 2026-08-19: region top 0.24 is the SCROLL bounds, not the TAP bounds. A row clipped by the viewport's top edge renders but does not accept taps - a tap at y~0.27 on a half-visible THAI row did nothing at all. Only tap rows sitting fully inside the region; scroll a partially visible target into full view first.",
+        "$dragFromInsideTheList": "Start the drag WELL INSIDE the list - around 40% to 85% down the recorded region - not near its top or bottom edge. RETRACTED 2026-08-19: drags beginning near the top edge move nothing at all, at any speed, and that was written up as the picker refusing to scroll above the selected entry. It does no such thing. A drag starting mid-list walks straight up to ENGLISH. The gesture had been landing on the modal's edge rather than on the list, so the list never received it. 'The control did not respond' and 'the app forbids this' look identical from outside, and only one of them is worth reporting."
       },
       "entries": {
         "$comment": "Complete list as shipped in 2.14.0, top to bottom. RE-ENUMERATED on 2026-08-18 (second pass), scrolling end to end twice with a settle between every swipe. There are NINETEEN entries, not the fifteen recorded earlier: TAGALOG, MALAY, VIETNAMESE and THAI sit between INDONESIAN and JAPANESE and were missed entirely by the first enumeration — almost certainly one un-settled swipe that skipped a page, which is exactly the failure techniques.scrollMomentumSettle exists to prevent. Arabic is still absent (retired in 2.14.0). Every entry is written in ENGLISH rather than as an endonym; see knownFindings.languageNamesNotEndonyms.",
@@ -500,7 +496,8 @@
           "INDONESIAN",
           "RUSSIAN"
         ],
-        "$untested": "Languages never yet driven on the device. THAI was driven on 2026-08-19 and is no longer untested: glyph coverage PASSED (knownIssues.thaiGlyphCoverage). VIETNAMESE is now the highest-value next target - the only remaining script family with genuinely unproven rendering, with stacked tone-plus-vowel marks and the same risk profile Thai had before it was tested. Korean and both Chinese variants share the proven CJK font, so their risk is grammatical rather than typographic. MALAY and CHINESE (TRADITIONAL) were briefly checked in the picker as intermediate two-hop selections but were never applied or scanned, and remain untested."
+        "$untested": "Languages never yet driven on the device. THAI was driven on 2026-08-19 and is no longer untested: glyph coverage PASSED (knownIssues.thaiGlyphCoverage). VIETNAMESE is now the highest-value next target - the only remaining script family with genuinely unproven rendering, with stacked tone-plus-vowel marks and the same risk profile Thai had before it was tested. Korean and both Chinese variants share the proven CJK font, so their risk is grammatical rather than typographic. MALAY and CHINESE (TRADITIONAL) were briefly checked in the picker as intermediate two-hop selections but were never applied or scanned, and remain untested.",
+        "$reanchor": "The picker opens with the CHECKED entry at the top of the viewport, which makes it look as though that entry is the first in the list and only the four below it exist. It is not - everything above is still there, reachable by dragging from inside the list. Recorded because it fooled a whole session: the appearance is convincing enough that it was taken for a hard limit and filed as a defect."
       }
     },
     "inventory": {
@@ -1505,8 +1502,7 @@
           "$comment": "MANDATORY and non-negotiable. Navigate to Settings > Account and confirm the Language row reads the target language before capturing anything. The restart reverts the account to English intermittently (3 of 4 trials on 2026-08-19). Without this read-back the failure is completely silent and produces a full run of false 'untranslated' findings. Abort the run rather than scan an unknown language."
         }
       ],
-      "endsOn": "settings.account",
-      "$order": "Scan languages in the order they appear in entries.order. A switch can only ever move DOWN the list (hazards.pickerCannotScrollAboveSelection), so a run that jumps to a late language strands the account and every earlier language becomes unreachable for the rest of the session."
+      "endsOn": "settings.account"
     }
   },
   "knownIssues": {
@@ -1551,6 +1547,11 @@
       "remainingScriptRisk": [
         "VIETNAMESE"
       ]
+    },
+    "purchaseConfirmations": {
+      "note": "The Google Play purchase sheet is a system dialog drawn over the game, not a game screen: its chrome is in the DEVICE language and only the product name and price come from the build. Do not report the sheet's own wording as a localization defect - read the product name, the price format and whatever confirmation the game shows afterwards. Currency and grouping follow the account REGION, not the language; see checkHints.currencyFollowsRegion.",
+      "mark": "known",
+      "severity": "low"
     }
   },
   "knownFindings": {
@@ -1950,14 +1951,6 @@
       "kind": "negative-result",
       "note": "Defects that repeat across languages and specifically DO NOT repeat in Thai - keep these so they are not re-raised. (1) The Japanese day-counter order bug does not occur: Japanese renders 日目4 with the numeral misplaced, Thai renders wan-thi 4..7 correctly, so the <label><n> concatenation happens to be right for Thai. (2) The pt-BR season-banner overflow does not occur: the Thai season banner fits the card comfortably where TEMPORADA TERMINADA clips its final A. (3) The Thai season banner and Claim All button were both raised as spelling/fit defects at full-screen resolution and both are correct - see techniques.thaiDiacriticsNeedCropping.",
       "foundOn": "2026-08-19"
-    },
-    "languagePickerTrapsLaterLanguages": {
-      "severity": "high",
-      "kind": "functional",
-      "where": "settings.languagePicker",
-      "note": "NOT a localization defect - a functional one, found while automating the language switch. Because the picker cannot scroll above the selected entry, choosing a language near the end of the list strands the account there: every language above it becomes unselectable. With THAI active only THAI, JAPANESE, KOREAN and both Chinese variants can be reached; a Thai player cannot return to English from this screen. CHINESE (SIMPLIFIED), the last entry, would leave the picker with exactly one selectable row. Worth filing on its own account, and worth knowing before a scan sets a language it cannot undo.",
-      "reproduce": "Set the language to THAI, reopen Settings > Account > Language, and try to scroll up. The list will not move. Scrolling down still works.",
-      "foundOn": "2026-08-19"
     }
   },
   "checkHints": {
@@ -1983,7 +1976,6 @@
     "dailyLoginRewardsCoversLobby": "A DAILY LOGIN REWARDS modal covers the lobby after launch and after every language change, and it swallows every lobby coordinate beneath it. It ate three navigation sequences during the 2026-08-18 second pass before it was recognised. Check for screens.dailyLoginRewards (and screens.promoInterstitial) before driving any lobby coordinate, and dismiss with the modal's own close control.",
     "backIsUnsafeForOverlays": "Do not use Android BACK to clear overlays in this title. BACK on the lobby opens exitConfirm, whose YES kills the app and ends the run. Any generic 'press back a few times to dismiss whatever is in the way' routine WILL eventually quit the game here. Dismiss modals with their own close control (screens.*.autoDismiss) and navigate up with the in-screen chevron at [0.035, 0.076].",
     "staleLanguageAfterSwitch": "After a language change the app keeps rendering parts of the UI in the language it launched with until it is restarted (see knownIssues.settingsLanguageLeak). A scan that switches language and captures immediately will report stale strings as untranslated defects all over the build. RESTART THE APP AFTER EVERY LANGUAGE CHANGE before capturing anything — this is a correctness requirement, not an optimisation.",
-    "languageMayNotSurviveRestart": "THE MOST DANGEROUS HAZARD IN THIS FILE. The account language does not reliably survive a process restart. Trialled 2026-08-19 over four restarts on a healthy network (WiFi validated, 0% loss, 24ms RTT): Thai after ~18s settle REVERTED to English; Thai after 60s REVERTED; Japanese after 60s REVERTED; Thai after ~5 minutes of ordinary navigation HELD. It is intermittent, which is worse than deterministic - a run that restarts after switching language will sometimes come back in English and then capture the whole build believing it is the target language, reporting every string as untranslated. The run would look successful and be worthless. NEVER assume the switch survived: read Settings > Account > Language back after the restart and abort if it does not show the target. The ~5-minute observation is a hypothesis about the mechanism, not a rule - do not encode a wait in place of the read-back.",
-    "pickerCannotScrollAboveSelection": "The language picker clamps its scroll range so the CHECKED entry is the first reachable row. Proved on device 2026-08-19 with Thai selected (entry 15 of 19): four fast downward drags moved the list by nothing, a single slow 900ms drag moved it by nothing, and the touch was registered each time - while the same gestures in the other direction walked normally to the end of the list. The picker also OPENS already anchored on the checked entry rather than at the top, so there is no moment at which the earlier rows are on screen. Consequence for a scan: a target language EARLIER in entries.order than the one currently active cannot be selected at all, by automation or by hand. findAndTapListEntry proves this with one probe scroll and stops with an explanation instead of retrying. Targets at or below the active language are reachable normally."
+    "languageMayNotSurviveRestart": "THE MOST DANGEROUS HAZARD IN THIS FILE. The account language does not reliably survive a process restart. Trialled 2026-08-19 over four restarts on a healthy network (WiFi validated, 0% loss, 24ms RTT): Thai after ~18s settle REVERTED to English; Thai after 60s REVERTED; Japanese after 60s REVERTED; Thai after ~5 minutes of ordinary navigation HELD. It is intermittent, which is worse than deterministic - a run that restarts after switching language will sometimes come back in English and then capture the whole build believing it is the target language, reporting every string as untranslated. The run would look successful and be worthless. NEVER assume the switch survived: read Settings > Account > Language back after the restart and abort if it does not show the target. The ~5-minute observation is a hypothesis about the mechanism, not a rule - do not encode a wait in place of the read-back."
   }
 }

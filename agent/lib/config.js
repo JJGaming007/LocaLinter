@@ -42,11 +42,17 @@ const DEFAULTS = {
 
   // Safety: never tap an element whose label matches one of these (case-insensitive).
   // Protects against real purchases / destructive actions on a live device.
+  // What a scan must never tap. Deliberately NOT a list of things that cost
+  // money: a store build runs on a test account with a test card, nothing is
+  // really charged, and the purchase and confirmation dialogs carry some of the
+  // most commercially visible text in the app — exactly what a localization
+  // scan is for. Blocking them was hiding the screens most worth reading.
+  //
+  // What is left is the set that ends the run or destroys the account it runs
+  // on, which no amount of test credit makes recoverable.
   blockedLabels: [
-    'buy', 'purchase', 'checkout', 'pay', 'subscribe', 'confirm purchase',
     'delete account', 'delete', 'remove account', 'reset progress', 'wipe',
-    'log ?out', 'sign ?out', 'logout', 'quit', 'exit game',
-    'uninstall', 'restore purchase', 'redeem', 'top ?up', 'recharge'
+    'log ?out', 'sign ?out', 'logout', 'quit', 'exit game', 'uninstall'
   ],
   // Elements matching these are probed even when they look non-interactive
   // (info "i" buttons, "?" help chips, tooltips, dropdown carets…)

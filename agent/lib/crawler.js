@@ -1122,60 +1122,46 @@ class Crawler {
           continue;
         }
 
-        // Going up is not slow — it is impossible, and the sooner that is said
-        // the better. The picker clamps its scroll range so the CHECKED entry
-        // is the first reachable row: with Thai selected, four downward drags
-        // and a slow 900 ms one move the list by nothing at all, while the same
-        // gestures downward reach the end of the list normally. Every entry
-        // above the current one is unselectable until the language is changed
-        // by some other means.
+        // Scrolling up, which works — but only if the drag starts inside the
+        // list rather than at its edge.
         //
-        // So this is proved once, cheaply, and reported as the app defect it is
-        // rather than retried ten times. See hazards.pickerCannotScrollAboveSelection.
+        // This was misdiagnosed once, expensively. Drags beginning near the top
+        // of the recorded region moved nothing, twice, at two speeds, and the
+        // conclusion drawn was that the picker refuses to scroll above the
+        // selected entry. It does not. A drag starting mid-list walks straight
+        // up to ENGLISH at the top. The gesture was landing on the modal's edge
+        // instead of the list, so the list never saw it.
+        //
+        // The lesson is worth more than the fix: "the control did not respond"
+        // and "the app forbids this" look identical from outside, and only one
+        // of them is a bug worth reporting.
         if (!scroll || !Array.isArray(scroll.region)) {
           this.run.log(`${screenName} records no scrollable region — cannot reach "${needle}".`, 'warn');
           break;
         }
         const [sx0, sy0, sx1, sy1] = scroll.region;
         const midX = (sx0 + sx1) / 2 * size.width;
-        const sorted = [...reachable].sort((a, b) => a.row.y - b.row.y);
-        const anchor = sorted[0];
+        const height = sy1 - sy0;
+        const minBefore = Math.min(...reachable.map((r) => r.idx));
 
         try {
+          // Well inside the list at both ends: 40% down to 85% down.
           await this.adb.swipe(
-            Math.round(midX), Math.round((sy0 + (sy1 - sy0) * 0.15) * size.height),
-            Math.round(midX), Math.round((sy0 + (sy1 - sy0) * 0.85) * size.height), 800
+            Math.round(midX), Math.round((sy0 + height * 0.40) * size.height),
+            Math.round(midX), Math.round((sy0 + height * 0.85) * size.height), 600
           );
         } catch (e) {
           this.run.log(`Could not scroll ${screenName}: ${e.message}`, 'warn');
           break;
         }
-        await sleep(500);
+        await sleep(900);
 
-        let probe = [];
-        try {
-          probe = await this.analyzer.readListRows(await this.screenshot());
-        } catch { /* treated as "did not move" below */ }
-        const movedTo = probe.filter((r) => r.visible)
-          .map((r) => order.indexOf(r.label.toUpperCase()))
-          .filter((i) => i >= 0);
-        const moved = movedTo.length && Math.min(...movedTo) < anchor.idx;
-
-        if (!moved) {
-          const msg = `"${needle}" sits above "${anchor.row.label}", which is the language currently selected, `
-            + 'and this picker will not scroll above the selected entry — so no language earlier in the list can be '
-            + 'chosen at all. Select it from a build that is already on an earlier language, or clear the app data. '
-            + 'This is a defect in the game, not in the scan.';
-          this.run.log(msg, 'warn');
-          this.run.warnings.push(msg);
-          return false;
+        if (minBefore === lastAnchor) {
+          this.run.log(`Scrolling up past "${order[minBefore]}" is not getting any further.`, 'warn');
+          break;
         }
-
-        // It did move, so this build does not have the defect; carry on from
-        // whatever is now reachable.
+        lastAnchor = minBefore;
         this.run.log(`Scrolled ${screenName} up toward "${needle}".`);
-        lastAnchor = anchor.idx;
-        await sleep(2500);
       }
     }
 
