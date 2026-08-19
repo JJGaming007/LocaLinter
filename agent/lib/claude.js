@@ -541,6 +541,121 @@ If it is visible, give the centre of the row as fractions of the image: x 0 is t
   }
 
   /**
+   * Decide, for each string read off the screen, what the sheet says about it.
+   *
+   * This is the comparison the whole product is for, and on a title with no
+   * accessibility bridge it was not happening. The deterministic path reconciles
+   * `state.texts` against the sheet — but those come from the bridge, so on a
+   * Unity build that draws into a SurfaceView the list is empty, matchesFor
+   * never runs, and the strings the vision pass reads are never looked up at
+   * all.
+   *
+   * Matching them mechanically is not good enough either. A shipped string is
+   * rarely byte-identical to its row: placeholders are filled in, the UI
+   * upper-cases it, punctuation drifts, a counter is appended. Normalised
+   * comparison then reports a correct translation as missing, and fuzzy
+   * comparison reports nonsense — asked about a settings toggle it offered
+   * "Light Ammo" at 46% as the nearest row.
+   *
+   * So retrieval stays mechanical, because narrowing 6,747 rows to a shortlist
+   * is what an index is for, and the judgement moves here.
+   */
+  async reconcileWithSheet({ strings, target, source, screenName = '' }) {
+    if (!strings || !strings.length) return [];
+
+    const lines = strings.map((s, i) => {
+      const cands = (s.candidates || []).slice(0, 3).map((c) => {
+        // How it was found matters as much as what was found: without this a
+        // 46% trigram guess reads exactly like an exact hit, and the model
+        // adopts the junk suggestion instead of saying nothing matched.
+        const how = c.score == null || c.score >= 1
+          ? 'exact match'
+          : `approximate, ${Math.round(c.score * 100)}% similar`;
+        return `        row ${c.row} (${how}) key=${JSON.stringify(c.key || '')} `
+          + `${source}=${JSON.stringify(c.source || '')} ${target}=${JSON.stringify(c.value || '')}`;
+      });
+      return `  [${i}] ${JSON.stringify(s.text)}\n${cands.length ? cands.join('\n') : '        (no candidate rows found)'}`;
+    });
+
+    const message = await this._send(() => this._messages.stream({
+      ...this._common(),
+      model: this.model,
+      max_tokens: 8000,
+      thinking: { type: 'adaptive' },
+      output_config: {
+        effort: 'medium',
+        format: {
+          type: 'json_schema',
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['verdicts'],
+            properties: {
+              verdicts: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['index', 'status'],
+                  properties: {
+                    index: { type: 'number', description: 'The [n] of the on-screen string.' },
+                    status: {
+                      type: 'string',
+                      enum: ['correct', 'untranslated', 'wrong_translation', 'not_in_sheet', 'variant'],
+                      description: 'variant = matches its row allowing for placeholders, case or UI formatting.',
+                    },
+                    key: { type: 'string', description: 'The matching row key, or "".' },
+                    row: { type: 'number', description: 'The matching row number, or 0.' },
+                    expected: { type: 'string', description: 'What the sheet says it should be, or "".' },
+                    severity: { type: 'string', enum: ['high', 'medium', 'low'] },
+                    note: { type: 'string', description: 'One sentence, only when something is wrong.' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: `These strings were read off a game screen${screenName ? ` (${screenName})` : ''} that is running in **${target}**. Under each one are the closest rows an index could find in the localization sheet, with that row's ${source} and ${target} values.
+
+Decide, for each string, what the sheet says about it.
+
+${lines.join('\n')}
+
+Statuses:
+
+- **correct** — it matches its row's ${target} value.
+- **variant** — it is that row, and the difference is mechanical rather than a mistake: a filled-in placeholder, upper-casing by the UI, a trailing counter or punctuation, a line break. This is NOT a defect and matters as much as the others: reporting these is what makes a report untrustworthy.
+- **untranslated** — the row exists and has a ${target} value, but the screen is showing the ${source} text instead. Do not use this for brand names, product names or strings that are identical in both languages by nature (numbers, "OK", "HYBRID", proper nouns).
+- **wrong_translation** — it matches a row, but what is on screen differs from that row's ${target} value in a way that changes the meaning. Say what the sheet expected.
+- **not_in_sheet** — none of the candidate rows is this string. It is hardcoded or the key has drifted, so no translator can see or fix it. Say this only when you are confident none of the candidates is a match — a bad fuzzy suggestion is not a match.
+
+Each candidate says how it was found. An **exact match** is reliable. An **approximate** one is a guess from a trigram index, and below about 70% it usually means nothing was found at all — treat that as no candidate rather than as the answer. Judge the string, not the suggestion.
+
+Return a verdict for every string. Leave note empty when the status is correct or variant.`,
+            },
+          ],
+        },
+      ],
+    }).finalMessage());
+
+    this._track(message.usage);
+    const text = (message.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    try {
+      const p = JSON.parse(text);
+      return Array.isArray(p.verdicts) ? p.verdicts : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Given a goal and the screen in front of us, decide the single next action.
    *
    * This replaces writing the steps down. A recorded procedure — tap the gear,

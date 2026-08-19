@@ -1283,6 +1283,104 @@ class Crawler {
   }
 
   /**
+   * Check what is on screen against the sheet, and turn the answers into findings.
+   *
+   * Runs on the strings the vision pass read, which on a title with no bridge is
+   * all of them — and which nothing was comparing to the sheet at all, because
+   * the deterministic path reconciles the bridge's text list and that list is
+   * empty here.
+   *
+   * Retrieval stays mechanical: narrowing thousands of rows to three candidates
+   * is what the index is for. Only the judgement is asked for, because that is
+   * the part an index is bad at — a shipped string is rarely byte-identical to
+   * its row once a placeholder is filled and the UI has upper-cased it.
+   */
+  async reconcileScreenWithSheet(seen, screenId, screenName) {
+    if (!this.cfg.modelSheetCompare || !this.analyzer || !this.sheet) return [];
+    const target = this.target && this.target.header;
+    const source = (this.target && this.target.sourceHeader) || 'English';
+    if (!target) return [];
+
+    // Worth asking about: real words, not numbers, counters or single glyphs.
+    const strings = [];
+    const seenOnce = new Set();
+    for (const raw of seen) {
+      const text = String(raw || '').trim();
+      if (!text || text.length < 2 || seenOnce.has(text)) continue;
+      if (!/\p{L}/u.test(text)) continue;               // no letters: a count, a price, an icon
+      seenOnce.add(text);
+      strings.push({ text, candidates: this.sheetCandidatesFor(text, target, source) });
+      if (strings.length >= 60) break;
+    }
+    if (!strings.length) return [];
+
+    let verdicts = [];
+    try {
+      verdicts = await this.analyzer.reconcileWithSheet({ strings, target, source, screenName });
+    } catch (e) {
+      this.run.log(`Could not check ${screenId} against the sheet: ${e.message}`, 'warn');
+      return [];
+    }
+
+    const TYPE = {
+      untranslated: 'untranslated',
+      wrong_translation: 'text_mismatch',
+      not_in_sheet: 'not_in_sheet',
+    };
+    const issues = [];
+    const tally = { correct: 0, variant: 0, untranslated: 0, wrong_translation: 0, not_in_sheet: 0 };
+    for (const v of verdicts) {
+      const s = strings[Number(v.index)];
+      if (!s) continue;
+      tally[v.status] = (tally[v.status] || 0) + 1;
+      if (v.status === 'correct' || v.status === 'variant') continue;
+
+      issues.push({
+        type: TYPE[v.status] || 'missing_translation',
+        severity: v.severity || (v.status === 'not_in_sheet' ? 'medium' : 'high'),
+        confidence: 'likely',
+        text: s.text,
+        where: screenName || screenId,
+        element: '',
+        key: v.key || '',
+        expected: v.expected || '',
+        message: v.note
+          || (v.status === 'not_in_sheet'
+            ? 'No row in the sheet carries this string, so it is hardcoded and cannot be translated or reviewed.'
+            : `The sheet's ${target} value does not match what is on screen.`),
+        source: 'sheet',
+      });
+    }
+
+    this.run.log(
+      `Checked ${strings.length} strings on ${screenId} against the sheet: `
+      + `${tally.correct + tally.variant} fine, ${tally.untranslated} untranslated, `
+      + `${tally.wrong_translation} not what the sheet says, ${tally.not_in_sheet} absent from the sheet.`
+    );
+    return issues;
+  }
+
+  /** The three rows most worth putting in front of the model for one string. */
+  sheetCandidatesFor(text, target, source) {
+    const seen = new Set();
+    const out = [];
+    const push = (h) => {
+      const e = h.entry;
+      if (!e || seen.has(e.rowNumber)) return;
+      seen.add(e.rowNumber);
+      out.push({
+        key: e.key, row: e.rowNumber,
+        value: e.values[target] || '',
+        source: e.values[source] || '',
+        score: h.score == null ? 1 : h.score,
+      });
+    };
+    for (const h of this.sheet.lookupExact(text).filter((h) => h.header !== '__key__')) push(h);
+    if (out.length < 3) for (const h of this.sheet.lookupFuzzy(text, { limit: 4 })) push(h);
+    return out.slice(0, 3);
+  }
+
+  /**
    * The part of the language switch that stays scripted, on purpose.
    *
    * The restart and the read-back are not navigation and are not a matter of
@@ -1983,10 +2081,16 @@ class Crawler {
       }
     }
 
+    // What the sheet says about every string on this screen. On a title with a
+    // bridge the deterministic pass has already done this; without one it is the
+    // only thing that does it at all.
+    const sheetIssues = await this.reconcileScreenWithSheet(seen, screenId, known && known.name);
+
     let issues = [
       ...staticIssues,
       ...aiStatic,
       ...baselineIssues,
+      ...sheetIssues,
       ...(vision.issues || []).map((i) => ({
         source: 'vision',
         type: i.type,

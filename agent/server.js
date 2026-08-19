@@ -458,7 +458,7 @@ function pickOverrides(options) {
   for (const k of numeric) {
     if (options[k] != null && Number.isFinite(Number(options[k]))) out[k] = Number(options[k]);
   }
-  for (const k of ['visionEnabled', 'scrollProbe', 'longPressProbe', 'routeSetLanguage', 'zoomVerify', 'modelDrivenNavigation']) {
+  for (const k of ['visionEnabled', 'scrollProbe', 'longPressProbe', 'routeSetLanguage', 'zoomVerify', 'modelDrivenNavigation', 'modelSheetCompare']) {
     if (typeof options[k] === 'boolean') out[k] = options[k];
   }
   for (const k of ['androidPackage', 'model', 'effort', 'baseUrl', 'extraChecks']) {

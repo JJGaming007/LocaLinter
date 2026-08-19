@@ -58,6 +58,12 @@ const DEFAULTS = {
   // Reach a goal by looking at the screen and deciding the next move, instead
   // of replaying recorded coordinates. Recorded steps assume the app is where
   // it was when they were written, and fail silently when it is not.
+  // Ask the model what the sheet says about each string on screen, rather than
+  // matching them mechanically. A shipped string is rarely byte-identical to its
+  // row once a placeholder is filled and the UI has upper-cased it, and on a
+  // build with no accessibility bridge nothing was comparing them at all.
+  modelSheetCompare: true,
+
   modelDrivenNavigation: true,
 
   zoomVerify: true,
