@@ -23,6 +23,26 @@ function safeRegexes(patterns) {
 }
 
 /**
+ * The route map's own blocked list, as anchored patterns.
+ *
+ * These are control refs — `lobby.play`, `exitConfirm.yes`, `store.*.purchase`
+ * — not the free-text labels a tester types in the panel, so they are matched
+ * whole rather than as substrings and `*` is the only wildcard.
+ *
+ * They were being recorded and then ignored: the crawler built its blocked list
+ * from the config alone, so every entry a route map author wrote to keep a scan
+ * out of a live match, an exit dialog, a settings reset or a purchase confirm
+ * did nothing at all. The self-test missed it because the test wired the two
+ * together itself, which is exactly the part production was missing.
+ */
+function routeBlockedPatterns(route) {
+  const labels = (route && route.blocked && route.blocked.labels) || [];
+  return labels
+    .filter((l) => typeof l === 'string' && l.trim())
+    .map((l) => `^${l.trim().replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`);
+}
+
+/**
  * Drives the app and captures every reachable screen.
  *
  * Two capture paths, chosen automatically:
@@ -57,7 +77,7 @@ class Crawler {
     this.useBridge = !!(bridge && bridge.available);
     this.mode = this.useBridge ? (bridge.info && bridge.info.mode === 'editor' ? 'unity-editor' : 'unity-bridge') : 'adb-vision';
 
-    this.blocked = safeRegexes(cfg.blockedLabels);
+    this.blocked = safeRegexes([...(cfg.blockedLabels || []), ...routeBlockedPatterns(route)]);
     this.probe = safeRegexes(cfg.probeLabels);
     // Steering. `focus` reorders the queue, `only` narrows it to the part of
     // the app the tester actually wants this run spent on.
@@ -186,6 +206,117 @@ class Crawler {
   }
 
   /**
+   * Tap a recorded control, then check it actually did something.
+   *
+   * A recorded coordinate is a guess about a layout, and a blind sequence of
+   * them fails in the worst possible way: every tap lands somewhere, nothing
+   * errors, and the procedure reports success having navigated nowhere. That is
+   * how the language switch spent two minutes on the lobby and then announced
+   * it could not find GERMAN in a picker it had never opened.
+   *
+   * So a step may name what should be on screen afterwards (`expect`). If it is
+   * not, the model is asked to find that control on the current screen and the
+   * tap is retried where it actually is. Recorded coordinates stay the fast
+   * path; looking is the fallback that keeps a shifted layout, a stale
+   * recording or an unexpected overlay from silently voiding the whole run.
+   */
+  async tapRouteStep(step) {
+    const ref = String(step.tap);
+    const point = this.resolveRef(ref);
+    if (!point) {
+      this.run.log(`Route step "${ref}" does not resolve — stopping the language switch.`, 'warn');
+      return false;
+    }
+    try {
+      await this.tapAt(point.x, point.y);
+    } catch (e) {
+      this.run.log(`Route step "${ref}" failed: ${e.message}`, 'warn');
+      return false;
+    }
+    if (!step.expect) return true;
+
+    await sleep(Number(step.wait) || this.cfg.settleMs);
+    const cap = await this.settleOnly();
+    const size = this.deviceSize || { width: 1080, height: 1920 };
+    let found = null;
+    try {
+      found = await this.analyzer.locateText(cap.png, String(step.expect));
+    } catch (e) {
+      this.run.log(`Could not confirm "${ref}": ${e.message}`, 'warn');
+      return true;                       // an unreadable screen is not proof of failure
+    }
+    if (found) return true;
+
+    // Before deciding the coordinate is wrong, rule out the two things that
+    // make a perfectly good coordinate miss: something covering it, and an app
+    // that has not finished launching. Both are ordinary here — the promo
+    // interstitial is on screen more often than not, and a cold start takes the
+    // better part of a minute.
+    this.run.log(`"${ref}" did not open ${step.expect} — clearing anything on top and trying once more.`);
+    await this.clearAutoDismissModals(cap);
+    await sleep(4000);
+    try {
+      await this.tapAt(point.x, point.y);
+      await sleep(Number(step.wait) || this.cfg.settleMs);
+      const retry = await this.settleOnly();
+      if (await this.analyzer.locateText(retry.png, String(step.expect))) {
+        this.run.log(`"${ref}" worked on the second try.`);
+        return true;
+      }
+    } catch { /* fall through to looking for it */ }
+
+    // Still not there. Look for the control by name and use wherever it is —
+    // only useful when the control carries text; an icon has nothing to match.
+    if (!step.find) {
+      this.run.log(`"${ref}" still did not open ${step.expect} — stopping the language switch.`, 'warn');
+      return false;
+    }
+    this.run.log(`Looking for "${step.find}" on screen instead.`);
+    let target = null;
+    try {
+      const now = await this.settleOnly();
+      target = await this.analyzer.locateText(now.png, String(step.find));
+    } catch { /* fall through to the failure below */ }
+    if (!target) {
+      this.run.log(`Could not find "${step.find}" on screen — stopping the language switch.`, 'warn');
+      return false;
+    }
+    await this.tapAt(
+      Math.max(0, Math.min(1, target.x)) * size.width,
+      Math.max(0, Math.min(1, target.y)) * size.height
+    );
+    this.run.log(`Recovered: tapped "${step.find}" where it actually is.`);
+    return true;
+  }
+
+  /**
+   * Which dismiss-on-sight screen is in front of us, decided by looking.
+   *
+   * Restricted to the screens the route map marks autoDismiss, so the question
+   * put to the model is small and closed: "is this one of these three modals,
+   * or not?" — not "what am I looking at?". The answer is cached per run
+   * signature so a modal that reappears between screens is not re-identified
+   * from scratch every time.
+   */
+  async identifyOverlayByVision(png) {
+    const candidates = Object.entries(this.routeScreens)
+      .filter(([, def]) => def && def.autoDismiss && def.autoDismiss.tap)
+      .map(([name, def]) => ({ name, anyText: (def.signature && def.signature.anyText) || [] }))
+      .filter((c) => c.anyText.length);
+    if (!candidates.length) return null;
+
+    let name = null;
+    try {
+      name = await this.analyzer.identifyScreen(png, candidates);
+    } catch (e) {
+      this.run.log(`Could not check for an overlay: ${e.message}`, 'warn');
+      return null;
+    }
+    if (!name || !this.routeScreens[name]) return null;
+    return { name, def: this.routeScreens[name] };
+  }
+
+  /**
    * Close the modals the route map marks `autoDismiss`, using their own close
    * control rather than the back key.
    *
@@ -210,7 +341,16 @@ class Crawler {
       let cleared = null;
       for (let i = 0; i < max; i++) {
         const texts = this.textsOf(current);
-        const known = this.identifyRouteScreen(texts);
+        let known = this.identifyRouteScreen(texts);
+
+        // Without the bridge there are no strings yet, so the match above is
+        // made against an empty array and always fails. Ask the model instead —
+        // one small call, against only the screens the map says to close on
+        // sight, rather than letting an overlay swallow the next four taps.
+        if (!known && !texts.length && this.analyzer && current && current.png) {
+          known = await this.identifyOverlayByVision(current.png);
+        }
+
         const auto = known && known.def && known.def.autoDismiss;
         if (!auto || !auto.tap) break;
 
@@ -425,8 +565,12 @@ class Crawler {
     for (const [label, pair] of Object.entries(def.controls || {})) {
       const p = this.routePoint(pair);
       if (!p) continue;
-      if (this.isBlocked(label)) {
-        this.run.skipped.push({ screenId, label, reason: 'matches a blocked-label pattern' });
+      // The route's blocked list names controls in full — `lobby.play`, not
+      // `play` — so the qualified ref is what has to be tested. Checking only
+      // the bare name let PLAY through on a map that explicitly forbids it.
+      const ref = `${name}.${label}`;
+      if (this.isBlocked(ref) || this.isBlocked(label)) {
+        this.run.skipped.push({ screenId, label: ref, reason: 'matches a blocked-label pattern' });
         continue;
       }
       out.push({
@@ -739,17 +883,7 @@ class Crawler {
       } else if (step.dismiss) {
         await this.clearAutoDismissModals(await this.settleOnly());
       } else if (step.tap) {
-        const point = this.resolveRef(String(step.tap));
-        if (!point) {
-          this.run.log(`Route step "${step.tap}" does not resolve — stopping the language switch.`, 'warn');
-          return false;
-        }
-        try {
-          await this.tapAt(point.x, point.y);
-        } catch (e) {
-          this.run.log(`Route step "${step.tap}" failed: ${e.message}`, 'warn');
-          return false;
-        }
+        if (!(await this.tapRouteStep(step))) return false;
       }
       if (step.wait) await sleep(Number(step.wait));
       else if (!step.action && !step.dismiss) await sleep(this.cfg.settleMs);
@@ -794,24 +928,161 @@ class Crawler {
   /**
    * Find a row by its text in a scrolling list and tap it.
    *
-   * Locate and tap have to happen close together. The picker re-anchors to the
-   * checked entry a second or two after it settles, so a screenshot taken,
-   * reasoned about at leisure, and then acted on describes a list that has
-   * already moved — which is how an earlier pass selected the wrong language
-   * three times running. Everything here is arranged to shorten that gap:
-   * settle, capture once, locate in that capture, tap immediately.
+   * Scrolling toward the row does not work on this picker, and the failure is
+   * silent: the list re-anchors the CHECKED entry back to the top a second or
+   * two after each swipe settles, so every capture shows the same few rows no
+   * matter how far you swiped. Driven by hand on 2026-08-19 that produced
+   * "scrolled to the end without finding THAI" against a list that plainly
+   * contains THAI, and before that three wrong selections in a row.
+   *
+   * What does work is to stop fighting the re-anchor and use it. Tapping a row
+   * only moves the checkbox — nothing is applied until CONFIRM — so a row on
+   * the way to the target is a free stepping stone. Tap the furthest reachable
+   * row toward the target, let the list re-anchor onto it, and the window has
+   * moved down the list. Repeat until the target is in view, then tap it.
+   *
+   * The recorded entries.order says which direction the target lies in, so the
+   * hops always go the right way. A list with no recorded order falls back to
+   * swiping, which is right for every app that does not do this.
    */
   async findAndTapListEntry(needle, screenName) {
     const def = this.routeScreens[screenName];
     const scroll = def && def.scrollable;
+    const order = ((def && def.entries && def.entries.order) || []).map((s) => String(s).toUpperCase());
     const size = this.deviceSize || { width: 1080, height: 1920 };
-    const maxSweeps = 8;
+    const wantIdx = order.indexOf(String(needle).toUpperCase());
+    const maxHops = 10;
 
-    for (let sweep = 0; sweep <= maxSweeps; sweep++) {
+    const tapRow = async (row) => {
+      await this.tapAt(
+        Math.max(0, Math.min(1, row.x)) * size.width,
+        Math.max(0, Math.min(1, row.y)) * size.height
+      );
+    };
+
+    // Preferred path: read the whole visible window and step toward the target.
+    if (wantIdx >= 0) {
+      let lastAnchor = null;
+      for (let hop = 0; hop <= maxHops; hop++) {
+        if (this.run.stopRequested) return false;
+
+        // Settle fully. Racing the re-anchor is what the old code did; letting
+        // it finish is what makes the next capture describe a list that will
+        // still be there when the tap lands.
+        const cap = await this.settleOnly();
+        let rows = [];
+        try {
+          rows = await this.analyzer.readListRows(cap.png);
+        } catch (e) {
+          this.run.log(`Could not read ${screenName}: ${e.message}`, 'warn');
+          break;
+        }
+        if (!rows.length) {
+          this.run.log(`Could not read any list rows on ${screenName} — the picker may not be open.`, 'warn');
+          break;
+        }
+        this.run.log(`${screenName} hop ${hop}: ${rows.map((r) => `${r.label}${r.checked ? '*' : ''}${r.visible ? '' : '(clipped)'}`).join(' | ')}`);
+
+        const hit = rows.find((r) => r.visible && r.label.toUpperCase() === String(needle).toUpperCase());
+        if (hit) {
+          // Confirmed by the next pass rather than assumed here. Reading the
+          // list costs twenty seconds, which is far longer than the re-anchor
+          // takes to fire — so on a freshly opened picker, which always shows
+          // the top of the list before snapping back to the checked entry, the
+          // row really was where the model said and is simply not there any
+          // more by the time the tap lands. Tapping and looking again turns
+          // that from a failed run into one more cheap iteration.
+          if (hit.checked) return true;
+          await tapRow(hit);
+          await sleep(2500);
+          continue;
+        }
+
+        // Which recorded entries can actually be tapped right now?
+        const reachable = rows
+          .filter((r) => r.visible)
+          .map((r) => ({ row: r, idx: order.indexOf(r.label.toUpperCase()) }))
+          .filter((r) => r.idx >= 0);
+        if (!reachable.length) {
+          this.run.log(`Nothing on screen matches the recorded ${screenName} entries (saw: ${rows.map((r) => r.label).filter(Boolean).join(', ') || 'nothing'}).`, 'warn');
+          break;
+        }
+
+        const nearest = reachable.reduce((best, r) =>
+          Math.abs(r.idx - wantIdx) < Math.abs(best.idx - wantIdx) ? r : best);
+
+        // Going down the list is the easy direction: the re-anchor parks the
+        // checked row at the TOP of the viewport, so the rows below it are all
+        // reachable and tapping the lowest one drags the window down.
+        if (nearest.idx < wantIdx && nearest.idx !== lastAnchor) {
+          lastAnchor = nearest.idx;
+          this.run.log(`"${needle}" is below the visible rows; stepping to "${nearest.row.label}".`);
+          await tapRow(nearest.row);
+          await sleep(2500);                        // let the re-anchor finish
+          continue;
+        }
+
+        // Going up is not slow — it is impossible, and the sooner that is said
+        // the better. The picker clamps its scroll range so the CHECKED entry
+        // is the first reachable row: with Thai selected, four downward drags
+        // and a slow 900 ms one move the list by nothing at all, while the same
+        // gestures downward reach the end of the list normally. Every entry
+        // above the current one is unselectable until the language is changed
+        // by some other means.
+        //
+        // So this is proved once, cheaply, and reported as the app defect it is
+        // rather than retried ten times. See hazards.pickerCannotScrollAboveSelection.
+        if (!scroll || !Array.isArray(scroll.region)) {
+          this.run.log(`${screenName} records no scrollable region — cannot reach "${needle}".`, 'warn');
+          break;
+        }
+        const [sx0, sy0, sx1, sy1] = scroll.region;
+        const midX = (sx0 + sx1) / 2 * size.width;
+        const sorted = [...reachable].sort((a, b) => a.row.y - b.row.y);
+        const anchor = sorted[0];
+
+        try {
+          await this.adb.swipe(
+            Math.round(midX), Math.round((sy0 + (sy1 - sy0) * 0.15) * size.height),
+            Math.round(midX), Math.round((sy0 + (sy1 - sy0) * 0.85) * size.height), 800
+          );
+        } catch (e) {
+          this.run.log(`Could not scroll ${screenName}: ${e.message}`, 'warn');
+          break;
+        }
+        await sleep(500);
+
+        let probe = [];
+        try {
+          probe = await this.analyzer.readListRows(await this.screenshot());
+        } catch { /* treated as "did not move" below */ }
+        const movedTo = probe.filter((r) => r.visible)
+          .map((r) => order.indexOf(r.label.toUpperCase()))
+          .filter((i) => i >= 0);
+        const moved = movedTo.length && Math.min(...movedTo) < anchor.idx;
+
+        if (!moved) {
+          const msg = `"${needle}" sits above "${anchor.row.label}", which is the language currently selected, `
+            + 'and this picker will not scroll above the selected entry — so no language earlier in the list can be '
+            + 'chosen at all. Select it from a build that is already on an earlier language, or clear the app data. '
+            + 'This is a defect in the game, not in the scan.';
+          this.run.log(msg, 'warn');
+          this.run.warnings.push(msg);
+          return false;
+        }
+
+        // It did move, so this build does not have the defect; carry on from
+        // whatever is now reachable.
+        this.run.log(`Scrolled ${screenName} up toward "${needle}".`);
+        lastAnchor = anchor.idx;
+        await sleep(2500);
+      }
+    }
+
+    // Fallback for lists with no recorded order: the original swipe sweep.
+    for (let sweep = 0; sweep <= 8; sweep++) {
       if (this.run.stopRequested) return false;
 
-      // Momentum first: a list still gliding reports positions that are stale
-      // by the time a tap lands.
       const cap = await this.settleOnly();
       let point = null;
       try {
@@ -820,13 +1091,21 @@ class Crawler {
         this.run.log(`Could not look for "${needle}": ${e.message}`, 'warn');
         return false;
       }
-
       if (point) {
-        const x = Math.max(0, Math.min(1, point.x)) * size.width;
-        const y = Math.max(0, Math.min(1, point.y)) * size.height;
-        await this.tapAt(x, y);              // immediately, before it re-anchors
-        await sleep(600);
-        return true;
+        await tapRow({ x: point.x, y: point.y });
+        await sleep(2500);
+        // Same race as above: locating costs long enough for the list to
+        // re-anchor underneath the tap. Saying "found it" without checking is
+        // what turned a missed tap into a whole run scanned in the wrong
+        // language, so the sweep only stops once the row reads back as checked.
+        try {
+          const after = await this.analyzer.readListRows(await this.screenshot());
+          const now = after.find((r) => r.label.toUpperCase() === String(needle).toUpperCase());
+          if (now && now.checked) return true;
+          this.run.log(`Tapped "${needle}" but it did not take — trying again.`);
+        } catch {
+          return true;                     // cannot check; assume it landed
+        }
       }
 
       if (!scroll || !Array.isArray(scroll.region)) {
@@ -844,7 +1123,7 @@ class Crawler {
         return false;
       }
     }
-    this.run.log(`Scrolled ${screenName} to the end without finding "${needle}".`, 'warn');
+    this.run.log(`Could not reach "${needle}" in ${screenName}.`, 'warn');
     return false;
   }
 
@@ -1521,11 +1800,25 @@ class Crawler {
    */
   async probeScrolls(cap, baseId, depth, pathLabels) {
     if (!this.cfg.scrollProbe) return;
+
+    // A modal that is about to be closed has nothing below the fold worth a
+    // vision call. Without this the daily-login popup was analysed, then
+    // swiped and analysed three more times, and only then dismissed — four
+    // calls and four screens of the run's budget on one modal.
+    if (this.autoDismissScreens.has(baseId)) return;
+
     if (this.useBridge && cap.state && Array.isArray(cap.state.scrolls)) {
       return this.probeBridgeScrolls(cap, baseId, depth, pathLabels);
     }
     const regions = this.routeScrollRegions(baseId);
     if (regions.length) return this.probeRouteScrolls(regions, baseId, depth, pathLabels);
+
+    // The route map recognised this screen and recorded no scrollable region,
+    // which is a statement that it does not scroll — not an invitation to
+    // guess. Blind-swiping a recognised screen is how a static modal over an
+    // animated lobby looked like three new screens: the background kept
+    // moving, so "nothing changed" never became true.
+    if (this.routeScreenFor.has(baseId)) return;
     return this.probeSwipeScrolls(cap, baseId, depth, pathLabels);
   }
 
@@ -1617,6 +1910,11 @@ class Crawler {
 
     let prevSig = this.signature(cap);
     let steps = 0;
+    // Everything this screen has already shown, so a scroll that adds nothing
+    // to it can be recognised as wasted.
+    const seenText = new Set(
+      (this.observedText.get(baseId) || []).map((t) => String(t).trim().toLowerCase())
+    );
 
     for (let step = 1; step <= this.cfg.scrollSteps; step++) {
       if (this.run.stopRequested) break;
@@ -1643,6 +1941,19 @@ class Crawler {
       this.screenCount++;
       this.run.log(`Scrolled ${baseId} down (${step}) — capturing ${id}`);
       await this.analyzeScreen(next, id, depth, [...pathLabels, `scroll down ${step}`]);
+
+      // A scrolled view that reveals no string the screen has not already
+      // shown is that screen photographed twice. The pixel checks above miss
+      // this whenever something behind the content animates — a character
+      // idling, a carousel rotating — because then the frame really did change
+      // even though nothing readable did. Text is the thing being scanned, so
+      // text is what decides whether the scroll was worth anything.
+      const before = seenText.size;
+      for (const t of (this.observedText.get(id) || [])) seenText.add(String(t).trim().toLowerCase());
+      if (seenText.size === before) {
+        this.run.log(`${id} showed nothing ${baseId} had not already shown — moving on.`);
+        break;
+      }
     }
 
     // Put the screen back where we found it so the parent state still matches.

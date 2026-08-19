@@ -657,15 +657,25 @@
         "anyText": [
           "OFFER",
           "OFERTA",
-          "LIMITED TIME"
-        ]
+          "LIMITED TIME",
+          "PLAY HARD",
+          "ANGEBOT",
+          "ข้อเสนอ",
+          "限定",
+          "เล่นหนัก"
+        ],
+        "$comment": "Widened on 2026-08-19. The recorded list only had the offer wording, so the character promo that actually shows on launch - a full-bleed art card reading e.g. 'BRUNO' over the tagline 'PLAY HARD', with no offer text anywhere - was not recognised at all. The crawler treated it as an unknown screen, could not get back to the lobby from it, and force-restarted the app three times in a row trying. PROVISIONAL: only the BRUNO card has been observed. The character name rotates and cannot be matched, so the tagline is doing the work; if a promo appears with a different tagline, add it here."
       },
-      "$comment": "A promotional interstitial may cover the lobby after launch. Close it before driving any lobby coordinate.",
+      "$comment": "A promotional interstitial covers the lobby after launch, more often than not. Close it via its X before driving any lobby coordinate; never tap anything else on it.",
       "controls": {
         "close": [
           0.95,
           0.09
         ]
+      },
+      "autoDismiss": {
+        "tap": "promoInterstitial.close",
+        "$comment": "Dismiss on sight. This screen has one safe control - the X. Everything else on it is a purchase: blind-tapping it on 2026-08-19 opened a Google Play checkout for a 4,999 pack. It is also the screen the app most often launches into, so leaving it unhandled stalls the whole crawl before the first capture."
       }
     },
     "missions": {
@@ -1438,16 +1448,25 @@
       "from": "lobby",
       "steps": [
         {
+          "dismiss": "any",
+          "$comment": "Clear whatever is covering the lobby BEFORE driving a single coordinate. The procedure is written from the lobby, but the app rarely launches there: the promo interstitial and the daily-login modal both sit on top of it, and every tap below then lands on the overlay instead. That failure is silent - the taps go somewhere, nothing errors, and the switch simply never happens."
+        },
+        {
           "tap": "lobby.settingsGear",
-          "wait": 3000
+          "wait": 3000,
+          "expect": "SETTINGS"
         },
         {
           "tap": "settings.tabAccount",
-          "wait": 2000
+          "wait": 2000,
+          "expect": "ACCOUNT SETTINGS",
+          "find": "the Account tab in the settings sidebar"
         },
         {
           "tap": "settings.account.languageChange",
-          "wait": 3000
+          "wait": 3000,
+          "expect": "SELECT LANGUAGE",
+          "find": "the CHANGE button on the Language row"
         },
         {
           "findAndTap": "{language}",
@@ -1486,7 +1505,8 @@
           "$comment": "MANDATORY and non-negotiable. Navigate to Settings > Account and confirm the Language row reads the target language before capturing anything. The restart reverts the account to English intermittently (3 of 4 trials on 2026-08-19). Without this read-back the failure is completely silent and produces a full run of false 'untranslated' findings. Abort the run rather than scan an unknown language."
         }
       ],
-      "endsOn": "settings.account"
+      "endsOn": "settings.account",
+      "$order": "Scan languages in the order they appear in entries.order. A switch can only ever move DOWN the list (hazards.pickerCannotScrollAboveSelection), so a run that jumps to a late language strands the account and every earlier language becomes unreachable for the rest of the session."
     }
   },
   "knownIssues": {
@@ -1521,7 +1541,7 @@
       "stale": false
     },
     "launchPromo": {
-      "note": "A promotional interstitial may cover the lobby after launch. Close it via screens.promoInterstitial.close before driving any lobby coordinates. This is a navigation obstacle, not a localization finding.",
+      "note": "A promotional interstitial may cover the lobby after launch - in practice it usually does. It is now marked autoDismiss so the crawler closes it with its own X rather than exploring it or pressing back. Before that was recorded it was the single biggest waste in a run: unrecognised, it looked like 'the app started on a different screen', which sends the crawler into restart-and-retry until the attempt limit. This is a navigation obstacle, not a localization finding.",
       "mark": "ignore"
     },
     "thaiGlyphCoverage": {
@@ -1930,6 +1950,14 @@
       "kind": "negative-result",
       "note": "Defects that repeat across languages and specifically DO NOT repeat in Thai - keep these so they are not re-raised. (1) The Japanese day-counter order bug does not occur: Japanese renders 日目4 with the numeral misplaced, Thai renders wan-thi 4..7 correctly, so the <label><n> concatenation happens to be right for Thai. (2) The pt-BR season-banner overflow does not occur: the Thai season banner fits the card comfortably where TEMPORADA TERMINADA clips its final A. (3) The Thai season banner and Claim All button were both raised as spelling/fit defects at full-screen resolution and both are correct - see techniques.thaiDiacriticsNeedCropping.",
       "foundOn": "2026-08-19"
+    },
+    "languagePickerTrapsLaterLanguages": {
+      "severity": "high",
+      "kind": "functional",
+      "where": "settings.languagePicker",
+      "note": "NOT a localization defect - a functional one, found while automating the language switch. Because the picker cannot scroll above the selected entry, choosing a language near the end of the list strands the account there: every language above it becomes unselectable. With THAI active only THAI, JAPANESE, KOREAN and both Chinese variants can be reached; a Thai player cannot return to English from this screen. CHINESE (SIMPLIFIED), the last entry, would leave the picker with exactly one selectable row. Worth filing on its own account, and worth knowing before a scan sets a language it cannot undo.",
+      "reproduce": "Set the language to THAI, reopen Settings > Account > Language, and try to scroll up. The list will not move. Scrolling down still works.",
+      "foundOn": "2026-08-19"
     }
   },
   "checkHints": {
@@ -1955,6 +1983,7 @@
     "dailyLoginRewardsCoversLobby": "A DAILY LOGIN REWARDS modal covers the lobby after launch and after every language change, and it swallows every lobby coordinate beneath it. It ate three navigation sequences during the 2026-08-18 second pass before it was recognised. Check for screens.dailyLoginRewards (and screens.promoInterstitial) before driving any lobby coordinate, and dismiss with the modal's own close control.",
     "backIsUnsafeForOverlays": "Do not use Android BACK to clear overlays in this title. BACK on the lobby opens exitConfirm, whose YES kills the app and ends the run. Any generic 'press back a few times to dismiss whatever is in the way' routine WILL eventually quit the game here. Dismiss modals with their own close control (screens.*.autoDismiss) and navigate up with the in-screen chevron at [0.035, 0.076].",
     "staleLanguageAfterSwitch": "After a language change the app keeps rendering parts of the UI in the language it launched with until it is restarted (see knownIssues.settingsLanguageLeak). A scan that switches language and captures immediately will report stale strings as untranslated defects all over the build. RESTART THE APP AFTER EVERY LANGUAGE CHANGE before capturing anything — this is a correctness requirement, not an optimisation.",
-    "languageMayNotSurviveRestart": "THE MOST DANGEROUS HAZARD IN THIS FILE. The account language does not reliably survive a process restart. Trialled 2026-08-19 over four restarts on a healthy network (WiFi validated, 0% loss, 24ms RTT): Thai after ~18s settle REVERTED to English; Thai after 60s REVERTED; Japanese after 60s REVERTED; Thai after ~5 minutes of ordinary navigation HELD. It is intermittent, which is worse than deterministic - a run that restarts after switching language will sometimes come back in English and then capture the whole build believing it is the target language, reporting every string as untranslated. The run would look successful and be worthless. NEVER assume the switch survived: read Settings > Account > Language back after the restart and abort if it does not show the target. The ~5-minute observation is a hypothesis about the mechanism, not a rule - do not encode a wait in place of the read-back."
+    "languageMayNotSurviveRestart": "THE MOST DANGEROUS HAZARD IN THIS FILE. The account language does not reliably survive a process restart. Trialled 2026-08-19 over four restarts on a healthy network (WiFi validated, 0% loss, 24ms RTT): Thai after ~18s settle REVERTED to English; Thai after 60s REVERTED; Japanese after 60s REVERTED; Thai after ~5 minutes of ordinary navigation HELD. It is intermittent, which is worse than deterministic - a run that restarts after switching language will sometimes come back in English and then capture the whole build believing it is the target language, reporting every string as untranslated. The run would look successful and be worthless. NEVER assume the switch survived: read Settings > Account > Language back after the restart and abort if it does not show the target. The ~5-minute observation is a hypothesis about the mechanism, not a rule - do not encode a wait in place of the read-back.",
+    "pickerCannotScrollAboveSelection": "The language picker clamps its scroll range so the CHECKED entry is the first reachable row. Proved on device 2026-08-19 with Thai selected (entry 15 of 19): four fast downward drags moved the list by nothing, a single slow 900ms drag moved it by nothing, and the touch was registered each time - while the same gestures in the other direction walked normally to the end of the list. The picker also OPENS already anchored on the checked entry rather than at the top, so there is no moment at which the earlier rows are on screen. Consequence for a scan: a target language EARLIER in entries.order than the one currently active cannot be selected at all, by automation or by hand. findAndTapListEntry proves this with one probe scroll and stops with an explanation instead of retrying. Targets at or below the active language are reachable normally."
   }
 }

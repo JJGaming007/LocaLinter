@@ -525,6 +525,162 @@ If it is visible, give the centre of the row as fractions of the image: x 0 is t
   }
 
   /**
+   * Name the screen in front of us, from a shortlist the route map supplies.
+   *
+   * The crawler could already do this from text — but only with the Unity
+   * bridge attached. On a title that draws its UI into a SurfaceView there are
+   * no strings until something has read the pixels, so the modal-dismissing
+   * code was matching against an empty array and concluding, every single
+   * time, that nothing was covering the screen. The promo interstitial then sat
+   * there while four recorded taps fired into it and the language switch
+   * silently did nothing.
+   *
+   * One small call fixes that, and it is far cheaper than the alternative: a
+   * full analyzeScreen on a modal whose only useful property is which button
+   * closes it.
+   */
+  async identifyScreen(png, candidates) {
+    const list = (candidates || [])
+      .filter((c) => c && c.name && Array.isArray(c.anyText) && c.anyText.length)
+      .slice(0, 40);
+    if (!list.length) return null;
+
+    const message = await this._send(() => this._messages.stream({
+      ...this._common(),
+      model: this.model,
+      max_tokens: 500,
+      output_config: {
+        format: {
+          type: 'json_schema',
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['name'],
+            properties: {
+              name: { type: 'string', description: 'The matching screen name, or "" if none match.' },
+              confident: { type: 'boolean', description: 'True only if the match is unambiguous.' },
+            },
+          },
+        },
+      },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/png', data: png.toString('base64') } },
+            {
+              type: 'text',
+              text: `Which of these known screens is this screenshot showing?
+
+${list.map((c) => `- ${c.name}: shows text such as ${c.anyText.slice(0, 6).map((t) => JSON.stringify(t)).join(', ')}`).join('\n')}
+
+The sample texts are only hints, and may be in a different language than the screenshot — match on what the screen IS, not on an exact string. A full-screen promotional or reward panel covering the app counts as that panel, not as whatever is behind it.
+
+Answer with the name exactly as written above. If none of them describe this screen, answer with an empty name.`,
+            },
+          ],
+        },
+      ],
+    }).finalMessage());
+
+    this._track(message.usage);
+    const text = (message.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    try {
+      const p = JSON.parse(text);
+      const name = String(p.name || '').trim();
+      if (!name || p.confident === false) return null;
+      return list.some((c) => c.name === name) ? name : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Read every row currently visible in a list, top to bottom.
+   *
+   * locateText answers "is this one row here?", which is the wrong question
+   * for a list that will not hold still. To get to an entry the list keeps
+   * pulling away from, the crawler has to know what it *can* reach right now
+   * and pick a stepping stone — and asking row by row would cost a call per
+   * guess. One call returns the whole visible window instead.
+   *
+   * Rows cut off at either edge are reported with visible:false: they render,
+   * but a tap on one lands on nothing, which is a failure that leaves no trace
+   * on screen.
+   */
+  async readListRows(png) {
+    const message = await this._send(() => this._messages.stream({
+      ...this._common(),
+      model: this.model,
+      max_tokens: 2000,
+      output_config: {
+        format: {
+          type: 'json_schema',
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['rows'],
+            properties: {
+              rows: {
+                type: 'array',
+                description: 'The list rows on screen, in the order they appear, top first.',
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['label', 'y', 'visible'],
+                  properties: {
+                    label: { type: 'string', description: 'The row text, exactly as printed.' },
+                    x: { type: 'number', description: 'Horizontal centre of the row, 0 = left, 1 = right.' },
+                    y: { type: 'number', description: 'Vertical centre of the row, 0 = top, 1 = bottom.' },
+                    visible: { type: 'boolean', description: 'True only if the whole row is inside the list, not clipped at either edge.' },
+                    checked: { type: 'boolean', description: 'Does the row show a ticked checkbox or selected mark?' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/png', data: png.toString('base64') } },
+            {
+              type: 'text',
+              text: `List every selectable row visible in the scrolling list on this screenshot, in top-to-bottom order.
+
+For each row give its label exactly as printed, the centre of the row as fractions of the image (x 0 left, 1 right; y 0 top, 1 bottom), and whether it is SELECTED — a ticked checkbox, check mark or obvious highlight the other rows lack.
+
+Set visible:false for any row clipped at the top or bottom edge of the list, even if you can read its text. A partly visible row cannot be tapped, so reporting it as usable selects nothing at all.
+
+Report only rows of the list itself. Ignore titles, buttons such as CANCEL or CONFIRM, and anything outside the list.`,
+            },
+          ],
+        },
+      ],
+    }).finalMessage());
+
+    this._track(message.usage);
+    const text = (message.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    try {
+      const p = JSON.parse(text);
+      if (!Array.isArray(p.rows)) return [];
+      return p.rows
+        .filter((r) => r && typeof r.label === 'string' && Number.isFinite(r.y))
+        .map((r) => ({
+          label: r.label.trim(),
+          x: Number.isFinite(r.x) ? r.x : 0.5,
+          y: r.y,
+          visible: r.visible !== false,
+          checked: r.checked === true,
+        }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Distil a finished run into a few lines worth keeping.
    *
    * Not a summary of the findings — that is what summarize() is for — but a

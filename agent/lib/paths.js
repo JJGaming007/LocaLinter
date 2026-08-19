@@ -92,14 +92,61 @@ function seedRoutesFromDisk() {
     return; // no shipped route maps; the picker just starts empty
   }
   for (const file of files) {
-    const target = path.join(ROUTES_DIR, file);
-    if (fs.existsSync(target)) continue;   // a local edit outlives an upgrade
     try {
-      fs.copyFileSync(path.join(src, file), target);
+      seedOneRoute(path.join(src, file), path.join(ROUTES_DIR, file));
     } catch (e) {
       console.warn(`[paths] could not seed ${file}: ${e.message}`);
     }
   }
+}
+
+/**
+ * Copy a shipped route map into the data directory, and keep it up to date.
+ *
+ * "Never overwrite an existing file" protects a tester's local edits, which is
+ * right — but on its own it also means a route map improved upstream never
+ * reaches anyone who has run the app once. Everything learned on the device
+ * this week was invisible to the desktop build for exactly that reason: the
+ * agent kept loading a first-run copy while the real map sat updated beside it,
+ * and the scans that followed looked like crawler bugs.
+ *
+ * So the two cases are separated. A copy the tester has not touched is just a
+ * stale cache and gets replaced. A copy they have edited is theirs and is left
+ * alone, with a line in the log saying the update was held back — silence there
+ * would recreate the same confusion in the other direction.
+ */
+function seedOneRoute(srcFile, target) {
+  const shipped = fs.readFileSync(srcFile);
+  const stamp = `${target}.seeded`;
+
+  if (!fs.existsSync(target)) {
+    fs.writeFileSync(target, shipped);
+    writeStamp(stamp, shipped);
+    return;
+  }
+
+  const current = fs.readFileSync(target);
+  if (current.equals(shipped)) return;               // already up to date
+
+  const seededHash = readStamp(stamp);
+  const currentHash = sha256(current);
+  if (seededHash && seededHash !== currentHash) {
+    console.warn(`[paths] ${path.basename(target)} has local edits — keeping them, not applying the shipped update.`);
+    return;
+  }
+
+  fs.writeFileSync(target, shipped);
+  writeStamp(stamp, shipped);
+}
+
+function sha256(buf) {
+  return require('crypto').createHash('sha256').update(buf).digest('hex');
+}
+function readStamp(file) {
+  try { return fs.readFileSync(file, 'utf8').trim(); } catch { return null; }
+}
+function writeStamp(file, buf) {
+  try { fs.writeFileSync(file, sha256(buf), 'utf8'); } catch { /* best effort */ }
 }
 
 module.exports = { DATA_DIR, CONFIG_PATH, ROUTES_DIR, RUNS_DIR, TOOLS_DIR, ensure, seedRoutes, isPackaged };

@@ -115,9 +115,13 @@ function makeCrawler(targetHeader = 'Portuguese (Brazil)') {
 
 // ── 7. the blocked list still guards the dangerous taps ───────────────────
 {
+  // Built the way a real run builds it: the config's blocked labels only. The
+  // route map's own list has to be picked up by the Crawler itself. This test
+  // used to translate route.blocked.labels into cfg here, which is precisely
+  // the wiring production was missing — so it passed while a live scan happily
+  // tapped PLAY.
   const c = new Crawler({
-    cfg: { ...cfg, blockedLabels: route.blocked.labels.map((l) => `^${l.replace(/\./g, '\\.').replace(/\*/g, '.*')}$`) },
-    adb: null, bridge: null, sheet: null, analyzer: null, run, route,
+    cfg, adb: null, bridge: null, sheet: null, analyzer: null, run, route,
     target: { header: 'German', sourceHeader: 'English' },
   });
   assert.strictEqual(c.isBlocked('lobby.play'), true);
