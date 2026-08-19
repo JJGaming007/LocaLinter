@@ -290,6 +290,34 @@ class Crawler {
   }
 
   /**
+   * Name the current screen against the whole route map, by looking at it.
+   *
+   * The fallback when the recorded signatures do not match, which on a build
+   * being scanned in a new language is most of the time — the samples were
+   * written in the languages someone happened to record. Getting a name back
+   * is what turns the map from a list of coordinates into the veto, the shared
+   * vocabulary and the "this screen does not scroll" it is actually for.
+   */
+  async identifyScreenByVision(cap) {
+    if (!this.analyzer || !cap || !cap.png) return null;
+    const candidates = Object.entries(this.routeScreens)
+      .map(([name, def]) => ({ name, anyText: (def.signature && def.signature.anyText) || [] }))
+      .filter((c) => c.anyText.length);
+    if (!candidates.length) return null;
+
+    let name = null;
+    try {
+      name = await this.analyzer.identifyScreen(cap.png, candidates);
+    } catch (e) {
+      this.run.log(`Could not identify the screen: ${e.message}`, 'warn');
+      return null;
+    }
+    if (!name || !this.routeScreens[name]) return null;
+    this.run.log(`Recognised this screen as "${name}" by looking — its recorded text did not match.`);
+    return { name, def: this.routeScreens[name] };
+  }
+
+  /**
    * Which dismiss-on-sight screen is in front of us, decided by looking.
    *
    * Restricted to the screens the route map marks autoDismiss, so the question
@@ -505,17 +533,89 @@ class Crawler {
       actions.sort((a, b) => (a.priority === 'high' ? -1 : 1) - (b.priority === 'high' ? -1 : 1));
     }
 
-    // Anything the route map already knows about this screen goes first, and
-    // wins over a guessed tap at roughly the same spot.
-    const fromRoute = this.routeActionsFor(screenId);
-    if (fromRoute.length) {
-      const near = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) < 40 && a.kind === b.kind;
-      const kept = actions.filter((a) => !fromRoute.some((r) => near(a, r)));
-      this.run.log(`Route map contributed ${fromRoute.length} known controls on ${screenId}.`);
-      return this.steer([...fromRoute, ...kept], screenId);
+    return this.steer(this.applyRouteToProposals(actions, screenId), screenId);
+  }
+
+  /**
+   * The route map's say over what the model decided to do.
+   *
+   * It used to be the other way round: recorded controls went first and any
+   * proposal near one was thrown away, so the crawl was really following a
+   * hand-drawn map with the model filling gaps. That inverts here. The model
+   * looks at the screen and says what is worth tapping — it is better at that
+   * than a coordinate recorded against one build on one device, and it is the
+   * part that keeps working when a layout moves.
+   *
+   * What the map keeps is the three things looking at a screenshot cannot tell
+   * you:
+   *
+   *   veto       — PLAY commits the account to a live match with an abandon
+   *                penalty; the red button on the promo is a real charge. None
+   *                of that is visible. A proposal landing on a control the map
+   *                forbids is dropped, whatever the model called it.
+   *   name       — a proposal near a recorded control inherits its ref, so
+   *                blocked patterns, known findings and the log all line up on
+   *                one vocabulary instead of whatever text the model read.
+   *   supplement — controls the model missed are added at the back rather than
+   *                the front. Mostly info badges: the tooltips behind a small
+   *                "?" carry text found on no other screen, and they are the
+   *                easiest thing on a screen to overlook.
+   */
+  applyRouteToProposals(proposals, screenId) {
+    const known = this.routeControlIndex(screenId);
+    if (!known.length) return proposals;
+
+    const near = (a, b) => Number.isFinite(a.x) && Number.isFinite(a.y)
+      && Math.hypot(a.x - b.x, a.y - b.y) < 48;
+
+    const kept = [];
+    let vetoed = 0;
+    for (const a of proposals) {
+      const match = known.find((k) => near(a, k));
+      const label = match ? match.ref : a.label;
+      if (this.isBlocked(label) || this.isBlocked(a.label)) {
+        this.run.skipped.push({ screenId, label, reason: 'matches a blocked-label pattern' });
+        vetoed += 1;
+        continue;
+      }
+      kept.push(match ? { ...a, label, knownAs: match.ref } : a);
     }
 
-    return this.steer(actions, screenId);
+    // Whatever the model did not see. Blocked ones never make it into the
+    // index, so nothing dangerous can be added back here.
+    const missed = this.routeActionsFor(screenId)
+      .filter((r) => !proposals.some((p) => near(p, r)))
+      .map((r) => ({ ...r, priority: 'medium' }));
+
+    const bits = [];
+    if (vetoed) bits.push(`vetoed ${vetoed}`);
+    if (missed.length) bits.push(`added ${missed.length} it missed`);
+    this.run.log(
+      `${screenId}: the model proposed ${proposals.length} control${proposals.length === 1 ? '' : 's'}`
+      + (bits.length ? `; the route map ${bits.join(' and ')}.` : '; the route map had nothing to add.')
+    );
+    return [...kept, ...missed];
+  }
+
+  /**
+   * Every control the route map records for this screen, blocked ones included.
+   *
+   * routeActionsFor drops the blocked ones because it produces things to do.
+   * This produces things to recognise, and a control has to stay recognisable
+   * precisely so a proposal that lands on it can be refused.
+   */
+  routeControlIndex(screenId) {
+    const match = this.routeScreenFor.get(screenId);
+    if (!match) return [];
+    const { name, def } = match;
+    const out = [];
+    const add = (ref, pair) => {
+      const p = this.routePoint(pair);
+      if (p) out.push({ ref, x: p.x, y: p.y });
+    };
+    for (const [label, pair] of Object.entries(def.controls || {})) add(`${name}.${label}`, pair);
+    for (const [label, pair] of Object.entries(def.infoBadges || {})) add(`${name}.badge.${label}`, pair);
+    return out;
   }
 
   // ── route map ──────────────────────────────────────────────────────────
@@ -1609,7 +1709,14 @@ class Crawler {
       ...((vision.unlisted_text || []).map((t) => (typeof t === 'string' ? t : t && t.text))),
     ].filter(Boolean);
     this.observedText.set(screenId, seen);
-    const known = this.identifyRouteScreen(seen);
+    // Signature matching is a substring test against a list of sample strings,
+    // which fails the moment a screen is in a language nobody recorded samples
+    // in — and then the map contributes nothing at all: no veto over what the
+    // model wants to tap, no names in the log, and a generic swipe down a
+    // screen the map already says does not scroll. Asking is cheap and it is
+    // the same question, put to something that can actually read the screen.
+    let known = this.identifyRouteScreen(seen);
+    if (!known) known = await this.identifyScreenByVision(cap);
     if (known) {
       this.routeScreenFor.set(screenId, known);
       this.run.log(`Route map recognises ${screenId} as "${known.name}".`);

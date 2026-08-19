@@ -170,4 +170,40 @@ function makeCrawler(targetHeader = 'Portuguese (Brazil)') {
   console.log('9 ok  Thai retired as a glyph risk, Vietnamese named as the next one');
 }
 
+// ── 10. the model decides, the route map vetoes ───────────────────────────
+//
+// The order matters as much as the outcome. Recorded controls used to go first
+// and displace anything the model proposed near them, which made the crawl a
+// hand-drawn map with the model filling gaps. Now the proposals lead and the
+// map only refuses, renames and tops up — so this checks both that PLAY cannot
+// get through under any label, and that the model's own choices stay in front.
+{
+  const c = makeCrawler('German');
+  c.routeScreenFor.set('screen-001', { name: 'lobby', def: route.screens.lobby });
+
+  const index = c.routeControlIndex('screen-001');
+  const play = index.find((k) => k.ref === 'lobby.play');
+  const missions = index.find((k) => k.ref === 'lobby.missions');
+  assert.ok(play && missions, 'the index must include controls, blocked ones included');
+
+  const proposals = [
+    { key: 'a', kind: 'tap', x: play.x, y: play.y, label: 'PLAY', priority: 'high' },
+    { key: 'b', kind: 'tap', x: missions.x, y: missions.y, label: 'Missions button', priority: 'high' },
+    { key: 'c', kind: 'tap', x: 5, y: 5, label: 'something only the model saw', priority: 'medium' },
+  ];
+  const out = c.applyRouteToProposals(proposals, 'screen-001');
+  const labels = out.map((a) => a.label);
+
+  assert.ok(!labels.includes('PLAY'), 'a proposal landing on PLAY must be refused');
+  assert.ok(!out.some((a) => a.label === 'lobby.play'), 'and not readmitted under its route name');
+  assert.ok(labels.includes('lobby.missions'), 'a proposal on a known control takes the route ref as its name');
+  assert.ok(labels.includes('something only the model saw'), 'proposals with no counterpart survive');
+  assert.strictEqual(labels[0], 'lobby.missions', 'the model\'s own proposals stay at the front');
+  assert.ok(
+    out.slice(2).every((a) => a.fromRoute),
+    'controls the model missed are appended behind its proposals, not ahead of them'
+  );
+  console.log('10 ok  the model proposes, the route map vetoes and tops up');
+}
+
 console.log('\nall self-tests passed');
