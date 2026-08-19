@@ -4,3 +4,8 @@
 # Google OAuth desktop client — never commit this.
 google-client.json
 agent/google-client.json
+
+# Dev-only: the CDP driver used to click the Electron UI headlessly.
+# Installed via `npm install`, not vendored like the xlsx tree above.
+node_modules/playwright-core/
+node_modules/.bin/playwright-core*

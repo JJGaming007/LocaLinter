@@ -6,5 +6,8 @@
   },
   "dependencies": {
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.62.1"
   }
 }
