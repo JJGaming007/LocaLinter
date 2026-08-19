@@ -19,7 +19,7 @@
       ],
       "build": "2.14.0 #11451000",
       "package": "com.indusgame.play",
-      "date": "2026-08-18",
+      "date": "2026-08-19",
       "sessions": [
         {
           "date": "2026-08-18",
@@ -39,6 +39,16 @@
             "Japanese"
           ],
           "scope": "Store catalogues (all 7), mission sub-categories (all 4), Weapons sub-collections (all 3), dailyLoginRewards, English baseline, German overflow pass, Japanese glyph pass"
+        },
+        {
+          "date": "2026-08-19",
+          "pass": "thai",
+          "languages": [
+            "English",
+            "Thai",
+            "Japanese"
+          ],
+          "scope": "Thai glyph-coverage pass (PASSED); lobby, dailyLoginRewards, Missions and Settings driven in Thai; language-persistence trial across four restarts; language-picker technique corrected"
         }
       ]
     },
@@ -66,7 +76,9 @@
     "stickyTabs": "Settings reopens on whichever tab was last used, not on General. Do not assume the landing tab — read the highlighted rail entry and navigate from what is actually on screen.",
     "englishBaseline": "Capture every screen twice: once in the source language and once in the target, then compare the same element in the pair. This is the only way to make an overflow reportable rather than arguable — 'Recompensas is too long' is an opinion, but English 'Rewards' fitting on one line beside pt-BR 'Recompen/sas' splitting mid-word is a fact. It is equally important for what it disproves: on this build the baseline killed three plausible findings that turned out to be source defects present in English. Compare text EXTENTS (does the string still fit its container?) and CONTENT (do source and target say the same thing?), and never diff a rotating carousel slot — the lobby's third promo card shows different content on each capture regardless of language.",
     "restartAfterLanguageChange": "Restart the app after every language change before capturing anything. This build freezes part of its UI in the language the process launched with — confirmed across four languages, and confirmed fixed by a force-stop and relaunch. Without the restart a scan reports stale strings as untranslated defects throughout the build. Cold launch to the lobby takes ~40s, and a daily-login modal reliably appears afterwards and must be dismissed before any lobby coordinate is driven.",
-    "modalsBeforeCoordinates": "Check for a known modal before driving any recorded coordinate. Indus shows a promo interstitial and a DAILY LOGIN REWARDS modal over the lobby, both after launch and after every language change. During recording the daily-login modal swallowed three separate navigation sequences: the taps landed on the modal, the crawl believed it had reached Settings, and the following captures were of the wrong screen and would have been reported as such. Dismiss with the modal's own close control, never with BACK — BACK on the lobby opens the exit-game dialog."
+    "modalsBeforeCoordinates": "Check for a known modal before driving any recorded coordinate. Indus shows a promo interstitial and a DAILY LOGIN REWARDS modal over the lobby, both after launch and after every language change. During recording the daily-login modal swallowed three separate navigation sequences: the taps landed on the modal, the crawl believed it had reached Settings, and the following captures were of the wrong screen and would have been reported as such. Dismiss with the modal's own close control, never with BACK — BACK on the lobby opens the exit-game dialog.",
+    "pickerTwoHopSelection": "Reaching a language far from the currently checked one. The re-anchor parks the CHECKED entry at the top of the viewport, so scrolling toward a distant target keeps getting pulled back and the target can never be held in view long enough to tap. The way through: tapping a row only moves the checkbox - NOTHING is applied until CONFIRM - so an intermediate selection is free. Tap any row near the target, let the list re-anchor onto it (~3s), then tap the real target from the now-stable list, then verifyChecked. Two hops, both verified. This is how THAI was reached on 2026-08-19 after three failed single-hop attempts.",
+    "thaiDiacriticsNeedCropping": "Thai tone marks (mai ek, mai tho, mai taikhu, thanthakhat) are small, sit right at the cap line, and are the single easiest thing in this build to hallucinate a defect about. On 2026-08-19 two 'missing tone mark' findings were raised at full-screen resolution and BOTH died when cropped and upscaled 4x - the marks were simply below the resolution being judged at. Never call a Thai spelling defect without cropping first. The converse also holds: the genuine misspelling that session found (knownFindings.quadSenseAndSpellingThai) was only confirmable at 4x."
   },
   "recovery": {
     "$comment": "EC-70001 'LOST CONNECTION' can strand the app on a modal that RETRY does not clear. A force-stop and relaunch reliably recovers it; observed on dev 1.12.0, not reproduced on prod 2.14.0.",
@@ -445,7 +457,8 @@
           0.7
         ],
         "axis": "vertical",
-        "rowPitch": 0.096
+        "rowPitch": 0.096,
+        "$tappable": "CORRECTED 2026-08-19: region top 0.24 is the SCROLL bounds, not the TAP bounds. A row clipped by the viewport's top edge renders but does not accept taps - a tap at y~0.27 on a half-visible THAI row did nothing at all. Only tap rows sitting fully inside the region; scroll a partially visible target into full view first."
       },
       "entries": {
         "$comment": "Complete list as shipped in 2.14.0, top to bottom. RE-ENUMERATED on 2026-08-18 (second pass), scrolling end to end twice with a settle between every swipe. There are NINETEEN entries, not the fifteen recorded earlier: TAGALOG, MALAY, VIETNAMESE and THAI sit between INDONESIAN and JAPANESE and were missed entirely by the first enumeration — almost certainly one un-settled swipe that skipped a page, which is exactly the failure techniques.scrollMomentumSettle exists to prevent. Arabic is still absent (retired in 2.14.0). Every entry is written in ENGLISH rather than as an endonym; see knownFindings.languageNamesNotEndonyms.",
@@ -473,7 +486,6 @@
         "incomplete": false,
         "count": 19,
         "untested": [
-          "THAI",
           "TAGALOG",
           "MALAY",
           "VIETNAMESE",
@@ -488,7 +500,7 @@
           "INDONESIAN",
           "RUSSIAN"
         ],
-        "$untested": "Languages never yet driven on the device. THAI is the highest-value next target: it is newly present, it was missed by the first enumeration, and its stacked diacritics are the build's biggest remaining glyph-coverage risk. Japanese already passed glyph coverage, so the CJK font is present."
+        "$untested": "Languages never yet driven on the device. THAI was driven on 2026-08-19 and is no longer untested: glyph coverage PASSED (knownIssues.thaiGlyphCoverage). VIETNAMESE is now the highest-value next target - the only remaining script family with genuinely unproven rendering, with stacked tone-plus-vowel marks and the same risk profile Thai had before it was tested. Korean and both Chinese variants share the proven CJK font, so their risk is grammatical rather than typographic. MALAY and CHINESE (TRADITIONAL) were briefly checked in the picker as intermediate two-hop selections but were never applied or scanned, and remain untested."
       }
     },
     "inventory": {
@@ -1422,7 +1434,7 @@
   },
   "procedures": {
     "setLanguage": {
-      "$comment": "Language is per ACCOUNT, not per device locale — the device stays on India/English and changing it has no effect. Takes ~15s to apply and returns to the SETTINGS screen (not the lobby), still on the Account tab. The picker has no fixed per-language coordinates: it is a scrolling list of 19 entries that must be located by reading the screen, and it RE-ANCHORS to the checked entry (see hazards.languagePickerReanchors), so locate and tap in one motion and read the checkbox back before confirming. Re-verified 2026-08-18 (second pass).",
+      "$comment": "Language is per ACCOUNT, not per device locale - the device stays on India/English and changing it has no effect. Takes ~15s to apply and returns to the SETTINGS screen (not the lobby), still on the Account tab. The picker has no fixed per-language coordinates: it is a scrolling list of 19 entries located by reading the screen, and it RE-ANCHORS to the checked entry (see hazards.languagePickerReanchors and techniques.pickerTwoHopSelection). REVISED 2026-08-19: the restart at the end is a two-sided risk, not a free safety measure. Skipping it leaves parts of the UI frozen in the launch language (hazards.staleLanguageAfterSwitch); performing it may silently revert the account to English (hazards.languageMayNotSurviveRestart). Neither can be trusted, so the procedure now READS THE LANGUAGE BACK after the restart and aborts if it is not the target.",
       "from": "lobby",
       "steps": [
         {
@@ -1462,9 +1474,19 @@
         {
           "dismiss": "dailyLoginRewards",
           "$comment": "The daily-login modal reliably appears after a relaunch."
+        },
+        {
+          "verifyLanguageApplied": "{language}",
+          "via": [
+            "lobby.settingsGear",
+            "settings.tabAccount"
+          ],
+          "readRow": "settings.account.languageValue",
+          "onMismatch": "abort",
+          "$comment": "MANDATORY and non-negotiable. Navigate to Settings > Account and confirm the Language row reads the target language before capturing anything. The restart reverts the account to English intermittently (3 of 4 trials on 2026-08-19). Without this read-back the failure is completely silent and produces a full run of false 'untranslated' findings. Abort the run rather than scan an unknown language."
         }
       ],
-      "endsOn": "lobby"
+      "endsOn": "settings.account"
     }
   },
   "knownIssues": {
@@ -1501,6 +1523,14 @@
     "launchPromo": {
       "note": "A promotional interstitial may cover the lobby after launch. Close it via screens.promoInterstitial.close before driving any lobby coordinates. This is a navigation obstacle, not a localization finding.",
       "mark": "ignore"
+    },
+    "thaiGlyphCoverage": {
+      "status": "PASS",
+      "testedOn": "2026-08-19",
+      "$comment": "Thai renders completely - no tofu, no fallback boxes, no dropped marks - including the stacked diacritics that made it the build's biggest recorded glyph risk. Verified on thua-pai (mai ek over sara a), khwam-wai-to-khwam-ru-suek (sara uu with mai tri), ri-set-kan-tang-kha (mai taikhu plus mai tho over sara a) and ang-sit-thi-thang-mot (thanthakhat plus a stacked mark). The Thai font ships and composes correctly. Retires the risk flagged by the 2026-08-18 second pass.",
+      "remainingScriptRisk": [
+        "VIETNAMESE"
+      ]
     }
   },
   "knownFindings": {
@@ -1793,6 +1823,113 @@
       "string": "PRÓXIMO A ENTRAR",
       "detail": "Labels the countdown to the next daily login. It reads as 'next in line to enter', not 'next login in'. Expected 'PRÓXIMO LOGIN EM'. Semantically wrong rather than merely awkward.",
       "teaches": "Countdown and timer labels are frequently mistranslated because the source is elliptical ('Next login in'); read them against what the number beside them actually counts."
+    },
+    "storeVerbSenseThai": {
+      "language": "Thai",
+      "severity": "high",
+      "string": "เก็บ",
+      "where": "lobby.store",
+      "expected": "ร้านค้า",
+      "note": "The lobby Store tab reads 'to keep / put away / collect' - the English noun Store taken in its verb sense. THE SAME DEFECT AS German SPEICHERN on the same key, now in a third language. Japanese renders it correctly as 店, so the key is sound and the source string is retrievable. Highest-yield single key in the build for a terminology audit.",
+      "relatedTo": [
+        "storeVerbSenseGerman"
+      ],
+      "foundOn": "2026-08-19"
+    },
+    "claimSenseThai": {
+      "language": "Thai",
+      "severity": "high",
+      "strings": [
+        "เรียกร้อง",
+        "อ้างสิทธิ์ทั้งหมด"
+      ],
+      "where": [
+        "lobby.claim",
+        "missions.claimAll"
+      ],
+      "expected": [
+        "รับ / รับรางวัล",
+        "รับทั้งหมด"
+      ],
+      "note": "Two DIFFERENT wrong-sense renderings of the same English word 'Claim' in the same build: riak-rong means to demand or call for a right, ang-sit-thi means to assert a legal right. Neither is 'collect your reward'. A terminology CONSISTENCY defect on top of the sense error. Japanese independently fails the same key as 請求 (invoice/bill), so Claim is wrong in at least two languages in three different ways.",
+      "foundOn": "2026-08-19"
+    },
+    "quadSenseAndSpellingThai": {
+      "language": "Thai",
+      "severity": "high",
+      "string": "สีเหลียม",
+      "where": "lobby.modeSelect",
+      "expected": "ทีม 4 คน / สควอด",
+      "note": "TWO independent defects in one short string. (1) Wrong sense: si-liam is the geometric quadrilateral/square; QUAD here is a four-player squad. (2) Misspelled: shipped as si-liam missing the mai ek on BOTH syllables - the first syllable alone then means 'colour'. Correct form is สี่เหลี่ยม. This is a source-string typo, NOT a rendering failure: the same font renders mai ek correctly in ทั่วไป, ต่อ, ฆ่า and ด้วย elsewhere. Confirmed by cropping at 4x.",
+      "foundOn": "2026-08-19"
+    },
+    "missionTemplateSpacingThai": {
+      "language": "Thai",
+      "severity": "high",
+      "where": "missions.*",
+      "examples": [
+        "ฆ่าศัตรู 1 ด้วย โชคชะตา ใน แบทเทิลรอยัล",
+        "เล่น 12 แมตช์ของ มินิ TDM",
+        "สร้างความเสียหายรวม 1200 ใน แบทเทิลรอยัล"
+      ],
+      "note": "Thai does not put spaces between words. The mission template is composed as '<verb> {n} <with> {item} <in> {mode}' with English-style separators and the spaces survive into Thai. Affects EVERY mission row, not one string. The first example also drops the classifier - Thai counts people with khon. Thai instance of missionTemplateComposition; see checkHints.spacelessScripts.",
+      "relatedTo": [
+        "missionTemplateComposition"
+      ],
+      "foundOn": "2026-08-19"
+    },
+    "eventMissionsUntranslatedThai": {
+      "language": "Thai",
+      "severity": "medium",
+      "string": "Event Missions",
+      "where": "missions.event",
+      "note": "Untranslated in English beside three correctly translated siblings. It is the tab SELECTED ON ENTRY, so it is the first thing a Thai player reads on the screen.",
+      "foundOn": "2026-08-19"
+    },
+    "buildVersionVerbThai": {
+      "language": "Thai",
+      "severity": "medium",
+      "string": "สร้างเวอร์ชัน",
+      "where": "settings.account",
+      "expected": "เวอร์ชัน",
+      "note": "sang is the verb 'to build/create'; the row shows a version number. Same class as kep / SPEICHERN / shoyu.",
+      "foundOn": "2026-08-19"
+    },
+    "sensitivitySenseThai": {
+      "language": "Thai",
+      "severity": "medium",
+      "string": "ความไวต่อความรู้สึก",
+      "where": "settings.tabSensitivity",
+      "expected": "ความไว",
+      "note": "Literally 'sensitivity to feeling' - the emotional sense, not control sensitivity. Also the longest item in the settings rail; comes close to the panel edge but does not clip.",
+      "foundOn": "2026-08-19"
+    },
+    "greenCloakUntranslatedThai": {
+      "language": "Thai",
+      "severity": "medium",
+      "string": "Green Cloak",
+      "where": "dailyLoginRewards",
+      "note": "Untranslated in Thai on a key that demonstrably has translations - Japanese renders it 緑のマント.",
+      "foundOn": "2026-08-19"
+    },
+    "changeButtonJapanese": {
+      "language": "Japanese",
+      "severity": "medium",
+      "string": "変化",
+      "where": [
+        "settings.account.regionChange",
+        "settings.account.languageChange"
+      ],
+      "expected": "変更",
+      "note": "変化 is change in the sense of transformation/mutation - something that happens TO a thing. The button PERFORMS a change, which is 変更. Only visible while the stale-language leak is active, which is why three passes walked past it. Confirmed against the same screen in English (CHANGE), so this is the Japanese rendering of the key, not an artefact. Same class as SPEICHERN and 所有.",
+      "foundOn": "2026-08-19"
+    },
+    "thaiNegativeResults": {
+      "language": "Thai",
+      "severity": "none",
+      "kind": "negative-result",
+      "note": "Defects that repeat across languages and specifically DO NOT repeat in Thai - keep these so they are not re-raised. (1) The Japanese day-counter order bug does not occur: Japanese renders 日目4 with the numeral misplaced, Thai renders wan-thi 4..7 correctly, so the <label><n> concatenation happens to be right for Thai. (2) The pt-BR season-banner overflow does not occur: the Thai season banner fits the card comfortably where TEMPORADA TERMINADA clips its final A. (3) The Thai season banner and Claim All button were both raised as spelling/fit defects at full-screen resolution and both are correct - see techniques.thaiDiacriticsNeedCropping.",
+      "foundOn": "2026-08-19"
     }
   },
   "checkHints": {
@@ -1802,20 +1939,22 @@
     "currencyFollowsRegion": "Prices render as Indian rupees (₹29.00) because the account region is India, while the UI language is Portuguese. That is correct — currency follows the account region, not the language. Do not report a currency/language mismatch as a defect; DO report a currency that does not match the region in the build stamp.",
     "unitSuffixes": "Ability stats render as '90s', '6s', '150%'. Check the separator and unit placement against locale convention rather than assuming the English form is right.",
     "playerContent": "The lobby carries a live chat line and player names (e.g. 'CrimsonEyE : all', 'InventiveAggressor'). These are user content, never localized, and must not be compared against the sheet.",
-    "ambiguousControlWords": "The highest-yield audit in any language: short English UI words with more than one sense, translated in the wrong one. Two confirmed on this build — German rendered the noun 'Store' as the verb SPEICHERN ('to save'), and Japanese rendered 'Hold' (press and hold) as 所有 ('to own'). Both sit on controls a player uses constantly, and both read as competent translations of a DIFFERENT word, so a spell-check or a length check will never catch them. Words to check every time: Store, Hold, Back, Free, Match, Save, Press, Fire, Round, Skip, Play, Left, Close, Charge, Draw, Scope. Where one language gets such a key right (Japanese 店 for Store) and another gets it wrong, the key is sound and the fault is that one translation.",
+    "ambiguousControlWords": "The highest-yield audit in any language: short ambiguous English control words produce translations that are competent renderings of a DIFFERENT word, so no length check and no spell check will ever catch them. Audit: Store, Hold, Claim, Back, Free, Match, Save, Press, Round, Draw, Scope, Change, Build, Quad, Sensitivity. Worked examples now spanning four languages. STORE -> German SPEICHERN (save data) and Thai kep (put away), while Japanese renders it correctly as ten. CLAIM -> Japanese seikyu (invoice), Thai riak-rong (demand a right) on the lobby AND ang-sit-thi (assert a legal right) in Missions: two different wrong senses of one word in one build. HOLD -> Japanese shoyu (possess). CHANGE -> Japanese henka (transformation). QUAD -> Thai si-liam (the geometric quadrilateral). BUILD -> Thai sang (the verb to create). When a key fails in one language, check it in every other - Store and Claim each failed in three languages out of four.",
     "standaloneNavLabels": "Navigation labels stand alone with no sentence around them, and machine translation routinely gives them the wrong part of speech. Confirmed twice: German 'Um' for About (a preposition, needs 'Über') and Japanese 一般的な for General (the adjectival form, needs 一般). Check every tab and rail label against the grammatical form its SIBLINGS take — a rail of nouns with one verb phrase in it is the tell, as with German 'Laden einlösen' beside Edelsteine and Erstellercode.",
     "numberFormatting": "Number formatting follows the account REGION, not the UI language, exactly as currency does — the pt-BR UI renders '₹2,499.00' with comma-thousands and dot-decimal because the account region is India. Do not report that as a pt-BR defect without a product decision (pt-BR convention would be '2.499,00'). What IS reportable without a decision is internal inconsistency: store.gems shows grouped prices ('₹4,999.00') beside ungrouped quantities ('x 12000') on the same screen, and missions render '10000' ungrouped. Flag the inconsistency, not the convention.",
     "staleLanguageAfterSwitch": "Parts of this build keep rendering the language the app process launched with until it is restarted — Settings labels and localized content alike (see knownIssues.settingsLanguageLeak). Any capture taken after a language change but before a restart will show stale strings that look exactly like untranslated defects. Restart the app after every language change, and treat any 'untranslated' finding gathered without one as unverified.",
     "baselineKillsFindings": "Capture the source-language baseline for the same screen before filing an overflow, a truncation or a terminology inconsistency. On this build the baseline PROVED two findings (the rewards column word-break, the season banner clip) and KILLED three that looked convincing: the lobby 'Daily Limit : 1/1' occlusion reproduces in English, the blank third row in the redemption sort dropdown appears in English, and the three-way 'Bundle Store / Premium Store / Bundles Store' naming mismatch exists in English. A finding filed against a translation for a defect the source already has is worse than no finding — it sends the wrong team after it.",
-    "cropBeforeCalling": "Read a tight crop of the actual text before calling truncation or clipping. Two candidates on this build looked truncated in a full-screen capture and were not: the redemption item description ('Os velhos tempos estão voltando com muito estilo!') is complete but runs behind the character render with no scrim, and the German claim chip looked like 'EANSPRUCHE' only because a modal was dimming it. Low contrast and occluding artwork imitate truncation at full-screen scale."
+    "cropBeforeCalling": "Read a tight crop of the actual text before calling truncation or clipping. Two candidates on this build looked truncated in a full-screen capture and were not: the redemption item description ('Os velhos tempos estão voltando com muito estilo!') is complete but runs behind the character render with no scrim, and the German claim chip looked like 'EANSPRUCHE' only because a modal was dimming it. Low contrast and occluding artwork imitate truncation at full-screen scale. REINFORCED 2026-08-19: on the Thai pass this rule killed two candidate findings outright and confirmed a third. Never call a diacritic, spelling or fit defect from a full-screen capture - crop the string and upscale it first. See techniques.thaiDiacriticsNeedCropping.",
+    "spacelessScripts": "Thai, Japanese, Chinese and Lao do not put spaces between words. A string template composed as '<verb> {n} <with> {item} <in> {mode}' carries its English separators straight through into those languages, where every space is wrong. Confirmed in Thai on 2026-08-19 across every Missions row. Flag interior spaces adjacent to interpolated values in any spaceless script. Check the classifier too: Thai counts people with khon, so 'kill 1 enemy' needs it and the build omits it."
   },
   "hazards": {
     "$comment": "States a crawl can put itself into that end or derail the run. Each was hit by hand during recording.",
     "backOnLobbyExits": "Android BACK on the lobby opens the exit-game confirmation (screens.exitConfirm). Hit during recording: a back-press intended to close the Weapons modal fell through to the lobby and opened it, and three subsequent taps landed on the dialog instead of the intended screen. Prefer the in-screen back chevron at [0.035, 0.076] over KEYCODE_BACK, and after any back-press check for the exitConfirm signature before tapping anything else.",
     "modalSwallowsTaps": "While any modal is open every coordinate from the underlying screen is wrong. After an unexpected modal appears, re-identify the screen from a fresh capture rather than continuing the planned tap sequence.",
-    "languagePickerReanchors": "The language picker re-anchors its list to the CURRENTLY CHECKED entry a few seconds after it settles. Observed twice on 2026-08-18: the list was fully settled (two identical frames 2s apart), a screenshot was taken, and by the time the tap landed the list had jumped back to the selected language — so the tap selected nothing, or the wrong row. This is a SEPARATE hazard from scroll momentum and it is the real reason the first pass 'selected the wrong language three times'. Working method: swipe, wait ~2s for momentum, capture ONCE, locate the target in that capture, and tap IMMEDIATELY. A long settle loop gives the re-anchor time to fire. Always read the checkbox back before confirming.",
+    "languagePickerReanchors": "The picker re-anchors the CHECKED entry to the top of the viewport a couple of seconds after a scroll settles. CORRECTED 2026-08-19: the previously recorded advice - 'capture once and tap immediately', racing the re-anchor - does NOT work and cost three mis-taps in a row (a snap back to ENGLISH mid-capture, a tap that hit MALAY, and a tap that landed on nothing). Do the OPPOSITE: let the re-anchor finish, then tap. It fires after a SCROLL, never after a TAP, so once it has fired the list is stable and a tap seconds later lands correctly. See techniques.pickerTwoHopSelection for reaching an entry far from the checked one.",
     "dailyLoginRewardsCoversLobby": "A DAILY LOGIN REWARDS modal covers the lobby after launch and after every language change, and it swallows every lobby coordinate beneath it. It ate three navigation sequences during the 2026-08-18 second pass before it was recognised. Check for screens.dailyLoginRewards (and screens.promoInterstitial) before driving any lobby coordinate, and dismiss with the modal's own close control.",
     "backIsUnsafeForOverlays": "Do not use Android BACK to clear overlays in this title. BACK on the lobby opens exitConfirm, whose YES kills the app and ends the run. Any generic 'press back a few times to dismiss whatever is in the way' routine WILL eventually quit the game here. Dismiss modals with their own close control (screens.*.autoDismiss) and navigate up with the in-screen chevron at [0.035, 0.076].",
-    "staleLanguageAfterSwitch": "After a language change the app keeps rendering parts of the UI in the language it launched with until it is restarted (see knownIssues.settingsLanguageLeak). A scan that switches language and captures immediately will report stale strings as untranslated defects all over the build. RESTART THE APP AFTER EVERY LANGUAGE CHANGE before capturing anything — this is a correctness requirement, not an optimisation."
+    "staleLanguageAfterSwitch": "After a language change the app keeps rendering parts of the UI in the language it launched with until it is restarted (see knownIssues.settingsLanguageLeak). A scan that switches language and captures immediately will report stale strings as untranslated defects all over the build. RESTART THE APP AFTER EVERY LANGUAGE CHANGE before capturing anything — this is a correctness requirement, not an optimisation.",
+    "languageMayNotSurviveRestart": "THE MOST DANGEROUS HAZARD IN THIS FILE. The account language does not reliably survive a process restart. Trialled 2026-08-19 over four restarts on a healthy network (WiFi validated, 0% loss, 24ms RTT): Thai after ~18s settle REVERTED to English; Thai after 60s REVERTED; Japanese after 60s REVERTED; Thai after ~5 minutes of ordinary navigation HELD. It is intermittent, which is worse than deterministic - a run that restarts after switching language will sometimes come back in English and then capture the whole build believing it is the target language, reporting every string as untranslated. The run would look successful and be worthless. NEVER assume the switch survived: read Settings > Account > Language back after the restart and abort if it does not show the target. The ~5-minute observation is a hypothesis about the mechanism, not a rule - do not encode a wait in place of the read-back."
   }
 }

@@ -131,4 +131,39 @@ function makeCrawler(targetHeader = 'Portuguese (Brazil)') {
   console.log('7 ok  dangerous taps blocked, Store catalogues opened up');
 }
 
+// ── 8. the language switch reads its own result back ──────────────────────
+//
+// The restart at the end of setLanguage reverts the account to English
+// intermittently — three of four trials on 2026-08-19. When it happens the run
+// carries on and reports every string in the build as untranslated, and nothing
+// about the run looks wrong. The read-back is the only thing standing between
+// that and a confidently wrong report, so it is pinned here rather than left to
+// whoever next edits the procedure.
+{
+  const steps = route.procedures.setLanguage.steps;
+  const verify = steps.find((s) => s.verifyLanguageApplied);
+  assert.ok(verify, 'setLanguage must read the language back after the restart');
+  assert.strictEqual(verify.onMismatch, 'abort', 'a wrong language must abort, never warn-and-continue');
+
+  const restartAt = steps.findIndex((s) => s.action === 'restart');
+  assert.ok(restartAt >= 0, 'the restart step must still exist');
+  assert.ok(steps.indexOf(verify) > restartAt, 'the read-back is only meaningful after the restart');
+
+  // The picker mis-selects silently, so the checkbox read-back matters too.
+  assert.ok(steps.some((s) => s.verifyChecked), 'setLanguage must verify the checkbox before confirming');
+
+  assert.ok(route.hazards.languageMayNotSurviveRestart, 'the persistence hazard must stay recorded');
+  console.log('8 ok  the language switch verifies the checkbox and reads the language back');
+}
+
+// ── 9. Thai is tested, and the next target is named ───────────────────────
+{
+  const entries = route.screens['settings.languagePicker'].entries;
+  assert.ok(!entries.untested.includes('THAI'), 'Thai was driven on 2026-08-19');
+  assert.strictEqual(route.knownIssues.thaiGlyphCoverage.status, 'PASS');
+  assert.ok(entries.untested.includes('VIETNAMESE'), 'Vietnamese is the remaining script risk');
+  assert.deepStrictEqual(route.knownIssues.thaiGlyphCoverage.remainingScriptRisk, ['VIETNAMESE']);
+  console.log('9 ok  Thai retired as a glyph risk, Vietnamese named as the next one');
+}
+
 console.log('\nall self-tests passed');
