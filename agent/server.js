@@ -414,6 +414,40 @@ const routes = {
   },
 };
 
+/**
+ * Does a knownIssues entry actually describe the language being scanned?
+ *
+ * This used to guess, by comparing the first two letters of the entry's key
+ * against the language code. Two letters is not an identifier: `thaiGlyphCoverage`
+ * begins "th" and so was reported as a known-broken language every time Thai was
+ * scanned — a record that Thai *passed* was announced to the tester as a defect.
+ * `arabicTofu` ("ar"), `launchPromo` ("la") and `settingsLanguageLeak` ("se") are
+ * all one language code away from the same collision.
+ *
+ * So the entry has to say what it applies to: either an explicit `language`, or a
+ * key that is exactly the sheet column or its code. Anything scoped to the whole
+ * app stays out of the per-language warning, which is where it belonged anyway.
+ */
+function routeIssueAppliesTo(key, note, target) {
+  if (note && typeof note === 'object' && (note.resolved || note.status === 'PASS')) return false;
+  const wanted = [String(target.header || ''), String(target.code || '')]
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const declared = note && typeof note === 'object' && note.language ? [String(note.language)] : [key];
+  return declared.some((d) => wanted.includes(String(d).trim().toLowerCase()));
+}
+
+/** A route-map note is a string, or an object carrying one. Never print [object Object]. */
+function describeRouteIssue(note) {
+  if (typeof note === 'string') return note;
+  if (note && typeof note === 'object') {
+    const text = note.note || note.$comment || note.message;
+    if (typeof text === 'string') return text;
+    if (text && typeof text === 'object' && typeof text.note === 'string') return text.note;
+  }
+  try { return JSON.stringify(note); } catch { return String(note); }
+}
+
 function pickOverrides(options) {
   const out = {};
   if (!options || typeof options !== 'object') return out;
@@ -487,10 +521,8 @@ async function startScan({ run, cfg, sheet, target, mode, serial, route }) {
     // report with noise that is already known and accepted.
     const known = Object.entries(route.knownIssues || {}).filter(([k]) => k !== '$comment');
     for (const [key, note] of known) {
-      if (String(target.code || '').toLowerCase().startsWith(key.slice(0, 2).toLowerCase())
-          || String(target.header || '').toLowerCase() === key.toLowerCase()) {
-        run.warnings.push(`Route map flags this language as known-broken on the recorded build: ${note}`);
-      }
+      if (!routeIssueAppliesTo(key, note, target)) continue;
+      run.warnings.push(`Route map flags this language as known-broken on the recorded build: ${describeRouteIssue(note)}`);
     }
     if (route.capabilities && route.capabilities.accessibilityText === false) {
       run.log('Route map: this game exposes no accessibility text, so strings come from pixels.');

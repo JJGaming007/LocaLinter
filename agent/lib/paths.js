@@ -50,18 +50,52 @@ function ensure() {
  * overwritten — a local edit outlives an upgrade.
  */
 function seedRoutes() {
-  if (!isPackaged()) return;
+  if (!isPackaged()) return seedRoutesFromDisk();
   let seed;
   try {
     seed = JSON.parse(require('node:sea').getAsset('routes-seed.json', 'utf8'));
   } catch {
-    return; // nothing embedded; the picker just starts empty
+    return seedRoutesFromDisk(); // nothing embedded; fall back to the shipped folder
   }
   for (const [file, data] of Object.entries(seed)) {
     const target = path.join(ROUTES_DIR, file);
     if (fs.existsSync(target)) continue;
     try {
       fs.writeFileSync(target, JSON.stringify(data, null, 2), 'utf8');
+    } catch (e) {
+      console.warn(`[paths] could not seed ${file}: ${e.message}`);
+    }
+  }
+}
+
+/**
+ * The same seeding, for every build that is not a single executable.
+ *
+ * The desktop app is the case this exists for. It is not a SEA, so isPackaged()
+ * is false, but it still points LOCALINTER_DATA_DIR at the per-user folder just
+ * like the packaged binary does — which left the route maps sitting in the
+ * install next to server.js while the agent looked for them somewhere else, and
+ * the picker came up empty. A scan then ran with no route map at all: no app to
+ * open, no modal auto-dismissed, and the back button live on a lobby where it
+ * quits the game.
+ *
+ * Copying is skipped when the two directories are the same, which is the source
+ * checkout — there the files are already where they belong.
+ */
+function seedRoutesFromDisk() {
+  const src = path.join(__dirname, '..', 'routes');
+  if (path.resolve(src) === path.resolve(ROUTES_DIR)) return;
+  let files;
+  try {
+    files = fs.readdirSync(src).filter((f) => f.endsWith('.json'));
+  } catch {
+    return; // no shipped route maps; the picker just starts empty
+  }
+  for (const file of files) {
+    const target = path.join(ROUTES_DIR, file);
+    if (fs.existsSync(target)) continue;   // a local edit outlives an upgrade
+    try {
+      fs.copyFileSync(path.join(src, file), target);
     } catch (e) {
       console.warn(`[paths] could not seed ${file}: ${e.message}`);
     }

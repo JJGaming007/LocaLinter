@@ -518,7 +518,15 @@
     el.dsSaveKey.disabled = true;
     el.dsSaveKey.textContent = 'Saving…';
     try {
-      const { config } = await api('/api/config', { method: 'POST', body: JSON.stringify({ apiKey: key }) });
+      // The base URL goes with the key, not after it. A gateway key fails the
+      // "sk-ant-" check, and the message it fails with tells you to set the
+      // base URL under Advanced — but saving only the key meant applyConfig()
+      // then overwrote the box you had just typed it into with the server's
+      // still-empty value. The advice and the behaviour cancelled out.
+      const { config } = await api('/api/config', {
+        method: 'POST',
+        body: JSON.stringify({ apiKey: key, baseUrl: el.dsBaseUrl.value.trim() }),
+      });
       el.dsApiKey.value = '';
       agentConfig = config;
       applyConfig(config);

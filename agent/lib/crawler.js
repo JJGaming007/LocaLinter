@@ -731,6 +731,11 @@ class Crawler {
         if (!ok) return false;
       } else if (step.action === 'restart' || step.restart) {
         if (!(await this.restartApp('so the UI stops rendering the language it launched with'))) return false;
+      } else if (step.verifyLanguageApplied) {
+        const ok = await this.verifyLanguageApplied(
+          String(step.verifyLanguageApplied).replace('{language}', wanted), step
+        );
+        if (!ok && step.onMismatch === 'abort') return false;
       } else if (step.dismiss) {
         await this.clearAutoDismissModals(await this.settleOnly());
       } else if (step.tap) {
@@ -867,6 +872,52 @@ class Crawler {
     }
     this.run.log(`${needle} is selected.`);
     return true;
+  }
+
+  /**
+   * Read the account language back after the restart, and refuse to scan if it
+   * is not the language that was asked for.
+   *
+   * The restart is not free. Driving it by hand on 2026-08-19 reverted the
+   * account to English three times out of four — Thai twice and Japanese once,
+   * on a healthy network — and held only on the fourth. Intermittent is the
+   * dangerous kind: the run continues, captures a build rendering English,
+   * compares it against the Thai column and reports every string as
+   * untranslated. Nothing about that run looks wrong from the outside.
+   *
+   * So the switch is not believed, it is checked. Navigating to Settings >
+   * Account costs two taps and turns a silent worthless run into a loud one.
+   */
+  async verifyLanguageApplied(wanted, step) {
+    const via = Array.isArray(step.via) ? step.via : [];
+    for (const ref of via) {
+      const point = this.resolveRef(String(ref));
+      if (!point) {
+        this.run.log(`Cannot reach the language row — "${ref}" does not resolve, so the switch is unverified.`, 'warn');
+        return true;                       // a broken map must not fail the run
+      }
+      await this.tapAt(point.x, point.y);
+      await sleep(this.cfg.settleMs * 2);
+    }
+
+    const cap = await this.settleOnly();
+    let found = null;
+    try {
+      found = await this.analyzer.locateText(cap.png, wanted, {});
+    } catch (e) {
+      this.run.log(`Could not read the language back: ${e.message}`, 'warn');
+      return true;                         // an unreadable screen is not proof of failure
+    }
+    if (found) {
+      this.run.log(`Language reads back as ${wanted} after the restart.`);
+      return true;
+    }
+
+    const msg = `The restart did not keep ${wanted} — Settings still reports a different language. `
+      + 'Scanning now would report the whole build as untranslated, so the run is stopping instead.';
+    this.run.log(msg, 'warn');
+    this.run.warnings.push(msg);
+    return false;
   }
 
   /** Force-stop and relaunch, then wait for the app to come back. */
@@ -1364,7 +1415,11 @@ class Crawler {
       deduped = kept;
     }
     this.highIssues += deduped.filter((i) => i.severity === 'high').length;
-    this.langMismatchChecked = this.checkLanguageMismatch(deduped);
+    // The language-mismatch call that used to sit here came from an older
+    // branch and was carried in by a merge. It has no definition here, and it
+    // would be the wrong place for one: detectLanguageMismatch already runs
+    // above, off the deterministic pass, before a vision call is spent rather
+    // than after the findings are built.
     this.run.addIssues(deduped);
     this.run.addScreen({
       id: screenId,
